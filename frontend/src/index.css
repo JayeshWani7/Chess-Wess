@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-chrono-bg text-white font-mono;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-semibold transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-chrono-accent hover:bg-opacity-80 text-white;
+  }
+
+  .btn-ghost {
+    @apply btn border border-chrono-border hover:bg-chrono-surface text-gray-300;
+  }
+
+  .card {
+    @apply bg-chrono-surface border border-chrono-border rounded-xl p-4;
+  }
+
+  .input {
+    @apply bg-chrono-bg border border-chrono-border rounded-lg px-3 py-2 text-white
+           placeholder-gray-500 focus:outline-none focus:border-chrono-accent w-full;
+  }
+}
