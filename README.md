@@ -105,7 +105,7 @@ Frontend dev server: `http://localhost:5173`
 Create `.env` in repository root:
 
 ```env
-DATABASE_URL=postgres://your_db_user:your_db_password@localhost:5432/your_db_name?sslmode=disable
+DATABASE_URL=postgres://your_db_user:your_db_password@localhost:5432/your_db_name?sslmode=prefer
 REDIS_URL=redis://localhost:6379
 PORT=8080
 JWT_SECRET=REPLACE_WITH_SECURE_RANDOM_SECRET
@@ -118,7 +118,7 @@ For local Docker defaults in this repo, you can use:
 `postgres://ChessWess:ChessWess@localhost:5432/ChessWess?sslmode=disable`.
 These defaults are for local development only—change credentials before any shared or production deployment.
 For production, use secure DB credentials and enable SSL (e.g., `sslmode=require`).
-For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`, which yields a 256-bit secret).
+For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`, which generates 32 random bytes / 256 bits encoded as base64).
 
 ## API Overview
 
