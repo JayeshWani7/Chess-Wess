@@ -105,14 +105,17 @@ Frontend dev server: `http://localhost:5173`
 Create `.env` in repository root:
 
 ```env
-DATABASE_URL=postgres://ChessWess:ChessWess@localhost:5432/ChessWess?sslmode=disable
+DATABASE_URL=postgres://your_db_user:your_db_password@localhost:5432/your_db_name?sslmode=disable
 REDIS_URL=redis://localhost:6379
 PORT=8080
-JWT_SECRET=change-me-in-production
+JWT_SECRET=REPLACE_WITH_SECURE_RANDOM_SECRET
 
 VITE_API_URL=http://localhost:8080
 VITE_WS_URL=ws://localhost:8080
 ```
+
+For local Docker defaults in this repo, you can use:
+`postgres://ChessWess:ChessWess@localhost:5432/ChessWess?sslmode=disable`.
 
 ## API Overview
 
