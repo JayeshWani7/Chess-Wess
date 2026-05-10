@@ -116,8 +116,8 @@ VITE_WS_URL=ws://localhost:8080
 
 For local Docker defaults in this repo, you can use:
 `postgres://ChessWess:ChessWess@localhost:5432/ChessWess?sslmode=disable`.
-For production, use secure DB credentials and enable SSL (for example `sslmode=require`).
-For JWT secrets, generate a strong random value (example: `openssl rand -base64 32`).
+For production, use secure DB credentials and enable SSL (e.g., `sslmode=require`).
+For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`).
 
 ## API Overview
 
@@ -157,11 +157,7 @@ go build ./...
 cd frontend
 npm ci
 npm run build
-npm run lint
 ```
-
-> Note: lint currently requires an ESLint config file in the repo.
-As of now, this repository does not include one, so `npm run lint` may fail until ESLint config is added.
 
 ## Roadmap
 
