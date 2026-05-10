@@ -284,7 +284,7 @@ func (b *BotEngine) bestMove1Ply(game *chess.Game, moves []*chess.Move, position
 		if err := g2.Move(m); err != nil {
 			continue
 		}
-		score := b.evaluate(g2.Position(), positional)
+		score := b.evaluateGame(g2, positional)
 		if score > best {
 			best = score
 			bestMoves = []*chess.Move{m}
@@ -303,6 +303,9 @@ func (b *BotEngine) minimaxMove(game *chess.Game, depth int) *chess.Move {
 	if len(moves) == 0 {
 		return nil
 	}
+	// Order moves: captures and checks first for better alpha-beta pruning
+	moves = orderMoves(game, moves)
+
 	maximizing := b.botColor == chess.White
 	best := math.Inf(-1)
 	if !maximizing {
@@ -338,14 +341,34 @@ func (b *BotEngine) minimaxMove(game *chess.Game, depth int) *chess.Move {
 }
 
 func (b *BotEngine) alphaBeta(game *chess.Game, depth int, alpha, beta float64, maximizing bool) float64 {
+	// Check terminal state AFTER the move that led here has already been applied.
+	// pos.Status() returns Checkmate, Stalemate, or NoMethod.
+	pos := game.Position()
+	status := pos.Status()
+	if status == chess.Checkmate {
+		// The side to move is checkmated — the side that just moved wins.
+		// Prefer shorter mates by subtracting remaining depth from the score.
+		if pos.Turn() == chess.White {
+			return -mateScore + float64(100-depth) // white is mated → black wins
+		}
+		return mateScore - float64(100-depth) // black is mated → white wins
+	}
+	if status == chess.Stalemate {
+		return 0
+	}
+	// Also check game outcome (handles draws by repetition, 50-move rule, etc.)
 	outcome := game.Outcome()
-	if outcome != chess.NoOutcome || depth == 0 {
-		return b.evaluate(game.Position(), true)
+	if outcome != chess.NoOutcome {
+		return terminalScore(outcome, depth)
+	}
+	if depth == 0 {
+		return b.evaluate(pos, true)
 	}
 	moves := game.ValidMoves()
 	if len(moves) == 0 {
-		return b.evaluate(game.Position(), true)
+		return 0 // shouldn't happen after status check, but be safe
 	}
+	moves = orderMoves(game, moves)
 	if maximizing {
 		val := math.Inf(-1)
 		for _, m := range moves {
@@ -376,7 +399,49 @@ func (b *BotEngine) alphaBeta(game *chess.Game, depth int, alpha, beta float64, 
 	return val
 }
 
-// evaluate returns a score from White's perspective.
+// mateScore is the value assigned to a checkmate position.
+// It's large enough to always outweigh any material score.
+// Subtracting depth rewards finding checkmate in fewer moves.
+const mateScore = 1_000_000.0
+
+// terminalScore returns the score for a finished game.
+// depth is the remaining depth — higher remaining depth means the mate was
+// found sooner (fewer moves away), so we reward that.
+func terminalScore(outcome chess.Outcome, depth int) float64 {
+	switch outcome {
+	case chess.WhiteWon:
+		return mateScore - float64(100-depth) // white wins: large positive, prefer faster
+	case chess.BlackWon:
+		return -mateScore + float64(100-depth) // black wins: large negative
+	default:
+		return 0 // draw
+	}
+}
+
+// evaluateGame scores a position after a move has been applied to g.
+// It handles terminal states (checkmate/stalemate) before falling back
+// to the material+positional heuristic.
+func (b *BotEngine) evaluateGame(g *chess.Game, positional bool) float64 {
+	pos := g.Position()
+	status := pos.Status()
+	if status == chess.Checkmate {
+		if pos.Turn() == chess.White {
+			return -mateScore // white is mated → black wins
+		}
+		return mateScore // black is mated → white wins
+	}
+	if status == chess.Stalemate {
+		return 0
+	}
+	outcome := g.Outcome()
+	if outcome != chess.NoOutcome {
+		return terminalScore(outcome, 0)
+	}
+	return b.evaluate(pos, positional)
+}
+
+// evaluate returns a material + positional score from White's perspective.
+// Does NOT handle terminal positions — use evaluateGame for that.
 func (b *BotEngine) evaluate(pos *chess.Position, positional bool) float64 {
 	score := 0
 	board := pos.Board()
@@ -395,7 +460,55 @@ func (b *BotEngine) evaluate(pos *chess.Position, positional bool) float64 {
 			score += positionalBonus(piece, sq)
 		}
 	}
+	// Small bonus for putting the opponent in check.
+	// The Check MoveTag is already rewarded in orderMoves; here we add a
+	// small static bonus when the side to move is in check (bad for them).
+	if positional && pos.Status() == chess.Checkmate {
+		// Already handled by evaluateGame — shouldn't reach here, but be safe.
+		if pos.Turn() == chess.White {
+			return -mateScore
+		}
+		return mateScore
+	}
 	return float64(score)
+}
+
+// orderMoves sorts moves to improve alpha-beta pruning efficiency.
+// Priority: checkmate > captures (MVV-LVA) > checks > quiet moves.
+func orderMoves(game *chess.Game, moves []*chess.Move) []*chess.Move {
+	type scored struct {
+		m     *chess.Move
+		score int
+	}
+	ss := make([]scored, 0, len(moves))
+	for _, m := range moves {
+		s := 0
+		if m.HasTag(chess.Capture) {
+			// Most Valuable Victim - Least Valuable Attacker
+			victim := pieceValues[m.Promo()]
+			// notnil/chess doesn't expose the captured piece type directly on the move,
+			// so we use a flat capture bonus and rely on the search to sort out value
+			s += 1000 + victim
+		}
+		if m.HasTag(chess.Check) {
+			s += 500
+		}
+		if m.Promo() != chess.NoPieceType {
+			s += pieceValues[m.Promo()]
+		}
+		ss = append(ss, scored{m, s})
+	}
+	// Simple insertion sort (move lists are small, ≤ ~35 moves)
+	for i := 1; i < len(ss); i++ {
+		for j := i; j > 0 && ss[j].score > ss[j-1].score; j-- {
+			ss[j], ss[j-1] = ss[j-1], ss[j]
+		}
+	}
+	ordered := make([]*chess.Move, len(ss))
+	for i, s := range ss {
+		ordered[i] = s.m
+	}
+	return ordered
 }
 
 func positionalBonus(piece chess.Piece, sq chess.Square) int {
