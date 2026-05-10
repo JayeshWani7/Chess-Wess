@@ -100,6 +100,11 @@ export const useGameStore = create<GameState>()((set, get) => ({
     const applied = chess.move(move);
     if (!applied) return;
 
+    // Create a new Chess instance from the resulting FEN so that
+    // any useEffect depending on the `chess` reference will re-fire.
+    const nextFen = fen || chess.fen();
+    const newChess = new Chess(nextFen);
+
     const newMove: GameMove = {
       id: crypto.randomUUID(),
       gameId: get().activeGameId!,
@@ -107,11 +112,11 @@ export const useGameStore = create<GameState>()((set, get) => ({
       moveNumber: get().moves.length + 1,
       moveSan: applied.san,
       moveUci: applied.from + applied.to + (applied.promotion ?? ""),
-      fenAfter: fen || chess.fen(),
+      fenAfter: nextFen,
       createdAt: new Date().toISOString(),
     };
 
-    set((s) => ({ chess, moves: [...s.moves, newMove] }));
+    set((s) => ({ chess: newChess, moves: [...s.moves, newMove] }));
   },
 
   selectSquare: (square) => {

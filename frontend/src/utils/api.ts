@@ -34,6 +34,13 @@ export interface GameInfo {
   time_control: number;
   winner_id?: string | null;
   result?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface GameHistoryEntry extends GameInfo {
+  white_username: string;
+  black_username: string;
 }
 
 export interface GameMove {
@@ -45,6 +52,19 @@ export interface GameMove {
   move_uci: string;
   fen_after: string;
   created_at: string;
+}
+
+export interface BotInfo {
+  id: string;
+  username: string;
+  rating: number;
+}
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  is_bot: boolean;
+  rating: number;
 }
 
 export const api = {
@@ -89,4 +109,28 @@ export const api = {
       { method: "POST" },
       token
     ),
+
+  createBotGame: (
+    token: string,
+    timeControl: number,
+    botRating: number,
+    color: "white" | "black"
+  ) =>
+    request<GameInfo>(
+      "/api/games/bot",
+      {
+        method: "POST",
+        body: JSON.stringify({ time_control: timeControl, bot_rating: botRating, color }),
+      },
+      token
+    ),
+
+  listBots: (token: string) =>
+    request<BotInfo[]>("/api/bots", {}, token),
+
+  getUser: (token: string, userId: string) =>
+    request<UserInfo>(`/api/users/${userId}`, {}, token),
+
+  listMyGames: (token: string) =>
+    request<GameHistoryEntry[]>("/api/games/history", {}, token),
 };

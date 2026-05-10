@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
 	"github.com/ChessWess/backend/models"
+	"github.com/notnil/chess"
 )
 
 // handleGames handles GET /api/games (list open games) and POST /api/games (create game).
@@ -234,4 +236,177 @@ func (s *Server) resignGame(w http.ResponseWriter, r *http.Request, gameID strin
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "resigned"})
+}
+
+// ── Bot game ─────────────────────────────────────────────────────────────────
+
+type createBotGameRequest struct {
+	TimeControl int `json:"time_control"` // seconds; 0 = unlimited
+	BotRating   int `json:"bot_rating"`   // 400, 600, 800, 1000, 1200, 1400, 1600
+	// Color is always "white" for the human player (bot plays black).
+	// Pass color = "black" to play as black (bot plays white).
+	Color string `json:"color"` // "white" | "black"
+}
+
+// handleCreateBotGame creates a game against a bot and immediately starts it.
+// POST /api/games/bot
+func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID := r.Context().Value(userIDKey).(string)
+
+	var req createBotGameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	if req.TimeControl < 0 {
+		req.TimeControl = 0
+	}
+	if req.Color == "" {
+		req.Color = "white"
+	}
+
+	// Validate bot rating
+	validRatings := map[int]bool{400: true, 600: true, 800: true, 1000: true, 1200: true, 1400: true, 1600: true}
+	if !validRatings[req.BotRating] {
+		http.Error(w, `{"error":"invalid bot_rating; choose 400, 600, 800, 1000, 1200, 1400, or 1600"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Look up the bot user
+	botUsername := botUsernameForRating(req.BotRating)
+	var botID string
+	err := s.db.QueryRow(r.Context(),
+		`SELECT id FROM users WHERE username = $1 AND is_bot = TRUE`, botUsername,
+	).Scan(&botID)
+	if err != nil {
+		http.Error(w, `{"error":"bot not found — ensure bots are seeded"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Assign colors
+	var whiteID, blackID string
+	var botColor string
+	if req.Color == "black" {
+		// Human plays black, bot plays white
+		whiteID = botID
+		blackID = userID
+		botColor = "w"
+	} else {
+		// Human plays white, bot plays black
+		whiteID = userID
+		blackID = botID
+		botColor = "b"
+	}
+
+	// Create the game in 'active' state (both players are known immediately)
+	var g models.Game
+	err = s.db.QueryRow(r.Context(),
+		`INSERT INTO games (white_player_id, black_player_id, status, time_control)
+		 VALUES ($1, $2, 'active', $3)
+		 RETURNING id, white_player_id, black_player_id, status, time_control, created_at, updated_at`,
+		whiteID, blackID, req.TimeControl,
+	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.CreatedAt, &g.UpdatedAt)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Start the bot engine in the background
+	initialFEN := chess.NewGame().Position().String()
+	engine := NewBotEngine(s, g.ID, botID, botColor, req.BotRating)
+	go engine.Run(context.Background(), initialFEN)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(g)
+}
+
+func botUsernameForRating(rating int) string {
+	switch rating {
+	case 400:
+		return "Bot-400"
+	case 600:
+		return "Bot-600"
+	case 800:
+		return "Bot-800"
+	case 1000:
+		return "Bot-1000"
+	case 1200:
+		return "Bot-1200"
+	case 1400:
+		return "Bot-1400"
+	case 1600:
+		return "Bot-1600"
+	default:
+		return "Bot-1200"
+	}
+}
+
+// ── Game history ──────────────────────────────────────────────────────────────
+
+// listMyGames returns completed games the authenticated user participated in.
+// GET /api/games/history
+func (s *Server) listMyGames(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	userID := r.Context().Value(userIDKey).(string)
+
+	rows, err := s.db.Query(r.Context(),
+		`SELECT
+		   g.id,
+		   g.white_player_id,
+		   g.black_player_id,
+		   g.status,
+		   g.time_control,
+		   g.winner_id,
+		   g.result,
+		   g.created_at,
+		   g.updated_at,
+		   wu.username  AS white_username,
+		   bu.username  AS black_username
+		 FROM games g
+		 LEFT JOIN users wu ON wu.id = g.white_player_id
+		 LEFT JOIN users bu ON bu.id = g.black_player_id
+		 WHERE (g.white_player_id = $1 OR g.black_player_id = $1)
+		   AND g.status IN ('completed', 'abandoned')
+		 ORDER BY g.updated_at DESC
+		 LIMIT 50`,
+		userID,
+	)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type gameHistoryRow struct {
+		models.Game
+		WhiteUsername string `json:"white_username"`
+		BlackUsername string `json:"black_username"`
+	}
+
+	games := []gameHistoryRow{}
+	for rows.Next() {
+		var row gameHistoryRow
+		if err := rows.Scan(
+			&row.ID, &row.WhitePlayerID, &row.BlackPlayerID,
+			&row.Status, &row.TimeControl,
+			&row.WinnerID, &row.Result,
+			&row.CreatedAt, &row.UpdatedAt,
+			&row.WhiteUsername, &row.BlackUsername,
+		); err != nil {
+			continue
+		}
+		games = append(games, row)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(games)
 }

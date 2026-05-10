@@ -30,6 +30,7 @@ export default function Square({
       role="gridcell"
       aria-label={square}
       className={`relative flex items-center justify-center cursor-pointer ${bg} transition-colors`}
+      style={{ aspectRatio: "1 / 1", minWidth: 0, minHeight: 0 }}
       onClick={() => onClick(square)}
     >
       {/* Legal move dot / ring */}
@@ -40,13 +41,13 @@ export default function Square({
         <div className="absolute inset-0 rounded-sm ring-4 ring-inset ring-black/30 pointer-events-none" />
       )}
 
-      {/* Piece */}
+      {/* Piece — absolutely positioned so it never affects square layout */}
       {piece && (
         <motion.div
           key={`${piece.color}${piece.type}-${square}`}
           initial={{ scale: 0.85 }}
           animate={{ scale: 1 }}
-          className="w-full h-full flex items-center justify-center"
+          className="absolute inset-0 flex items-center justify-center"
         >
           <PieceIcon piece={piece} />
         </motion.div>

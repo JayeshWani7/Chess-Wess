@@ -24,6 +24,7 @@ export default function GamePage() {
 
   const { token, userId, username } = useAuthStore();
   const [resigning, setResigning] = useState(false);
+  const [opponentName, setOpponentName] = useState("Opponent");
   const connectedRef = useRef(false);
 
   // Connect WebSocket and load existing moves on mount
@@ -89,18 +90,32 @@ export default function GamePage() {
     };
   }, [activeGameId, token, userId, loadMoves, applyMove, setGameOver]);
 
-  // Detect checkmate / stalemate / draw locally
+  // Resolve opponent display name (handles bots like "Bot-800")
+  useEffect(() => {
+    if (!gameInfo || !userId || !token) return;
+    const opponentId =
+      playerColor === "w" ? gameInfo.black_player_id : gameInfo.white_player_id;
+    if (!opponentId) return;
+
+    api.getUser(token, opponentId)
+      .then((u) => setOpponentName(u.username))
+      .catch(() => setOpponentName("Opponent"));
+  }, [gameInfo, userId, playerColor, token]);
+
+  // Detect checkmate / stalemate / draw locally after every move
+  // (chess is a new instance after each applyMove, so this effect re-fires correctly)
   useEffect(() => {
     if (status !== "active") return;
     if (chess.isCheckmate()) {
-      const loserColor = chess.turn(); // the side to move is in checkmate
+      const loserColor = chess.turn(); // side to move is the one in checkmate
       const winnerId =
         loserColor === "w" ? gameInfo?.black_player_id : gameInfo?.white_player_id;
       setGameOver("checkmate", winnerId ?? null);
     } else if (chess.isStalemate() || chess.isDraw()) {
       setGameOver("stalemate", null);
     }
-  }, [chess, status, gameInfo, setGameOver]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chess]); // chess is a new ref after every move — that's the trigger
 
   async function handleResign() {
     if (!token || !activeGameId || resigning) return;
@@ -120,7 +135,6 @@ export default function GamePage() {
   }
 
   // Build display names
-  const opponentName = "Opponent";
   const whiteName = playerColor === "w" ? (username ?? "You") : opponentName;
   const blackName = playerColor === "b" ? (username ?? "You") : opponentName;
 

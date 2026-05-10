@@ -38,6 +38,10 @@ func main() {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
+	if err := db.SeedBots(ctx, pool); err != nil {
+		log.Fatalf("failed to seed bots: %v", err)
+	}
+
 	// Initialize Redis (optional for Phase 1 — used for caching in later phases)
 	rdb, err := db.ConnectRedis(os.Getenv("REDIS_URL"))
 	if err != nil {

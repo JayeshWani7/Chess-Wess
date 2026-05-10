@@ -11,6 +11,7 @@ import (
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	migrations := []string{
 		createUsersTable,
+		alterUsersAddBotColumns,
 		createGamesTable,
 		createGameMovesTable,
 	}
@@ -28,8 +29,21 @@ CREATE TABLE IF NOT EXISTS users (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username    VARCHAR(32) UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  is_bot      BOOLEAN NOT NULL DEFAULT FALSE,
+  rating      INT NOT NULL DEFAULT 1200,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+`
+
+const alterUsersAddBotColumns = `
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='is_bot') THEN
+    ALTER TABLE users ADD COLUMN is_bot BOOLEAN NOT NULL DEFAULT FALSE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='rating') THEN
+    ALTER TABLE users ADD COLUMN rating INT NOT NULL DEFAULT 1200;
+  END IF;
+END $$;
 `
 
 const createGamesTable = `

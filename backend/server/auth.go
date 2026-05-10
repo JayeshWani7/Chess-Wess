@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -120,4 +121,37 @@ func issueJWT(userID string) (string, error) {
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(jwtSecret()))
+}
+
+// handleGetUser returns public info for a user by ID.
+// GET /api/users/{id}
+func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	userID := strings.TrimPrefix(r.URL.Path, "/api/users/")
+	if userID == "" {
+		http.Error(w, `{"error":"user id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	var id, username string
+	var isBot bool
+	var rating int
+	err := s.db.QueryRow(r.Context(),
+		`SELECT id, username, is_bot, rating FROM users WHERE id = $1`, userID,
+	).Scan(&id, &username, &isBot, &rating)
+	if err != nil {
+		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"id":       id,
+		"username": username,
+		"is_bot":   isBot,
+		"rating":   rating,
+	})
 }
