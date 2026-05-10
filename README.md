@@ -115,11 +115,11 @@ VITE_API_URL=http://localhost:8080
 VITE_WS_URL=ws://localhost:8080
 ```
 
-For local Docker defaults in this repo, use:
+For local Docker defaults in this repo (INSECURE — LOCAL DEVELOPMENT ONLY), use:
 `postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>?sslmode=disable`.
 In `docker-compose.yml`, those values are currently set for local development and should be changed before any shared or production deployment.
 For production, use secure DB credentials and strict SSL settings (e.g., `sslmode=require` or stronger).
-For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`, which generates 32 random bytes and encodes them as base64, producing a 44-character string).
+For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`).
 
 ## API Overview
 
