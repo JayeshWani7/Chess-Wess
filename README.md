@@ -118,7 +118,7 @@ For local Docker defaults in this repo, you can use:
 `postgres://ChessWess:ChessWess@localhost:5432/ChessWess?sslmode=disable`.
 These defaults are for local development only—change credentials before any shared or production deployment.
 For production, use secure DB credentials and enable SSL (e.g., `sslmode=require`).
-For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`, which generates 32 random bytes / 256 bits encoded as base64).
+For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`, which generates 32 random bytes encoded as base64).
 
 ## API Overview
 
@@ -166,4 +166,4 @@ The long-term product direction (timeline branching / multiverse chess) is docum
 
 ## License
 
-No license file is currently included.
+This project is currently unlicensed (no LICENSE file is present yet).
