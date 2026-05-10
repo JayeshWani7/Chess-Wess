@@ -116,8 +116,9 @@ VITE_WS_URL=ws://localhost:8080
 
 For local Docker defaults in this repo, you can use:
 `postgres://ChessWess:ChessWess@localhost:5432/ChessWess?sslmode=disable`.
+These defaults are for local development only—change credentials before any shared or production deployment.
 For production, use secure DB credentials and enable SSL (e.g., `sslmode=require`).
-For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`).
+For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`, which yields a 256-bit secret).
 
 ## API Overview
 
