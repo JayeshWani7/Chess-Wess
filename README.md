@@ -102,7 +102,8 @@ Frontend dev server: `http://localhost:5173`
 
 ## Environment Variables
 
-Create `.env` in repository root:
+Create `.env` in repository root.
+Example below is production-oriented:
 
 ```env
 DATABASE_URL=postgres://your_db_user:your_db_password@localhost:5432/your_db_name?sslmode=require
@@ -118,7 +119,7 @@ For local Docker defaults in this repo, use:
 `postgres://<POSTGRES_USER>:<POSTGRES_PASSWORD>@localhost:5432/<POSTGRES_DB>?sslmode=disable`.
 In `docker-compose.yml`, those values are currently set for local development and should be changed before any shared or production deployment.
 For production, use secure DB credentials and strict SSL settings (e.g., `sslmode=require` or stronger).
-For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`, which generates 32 random bytes encoded as base64).
+For JWT secrets, generate a strong random value (e.g., `openssl rand -base64 32`, which generates 32 random bytes and encodes them as base64).
 
 ## API Overview
 
