@@ -39,7 +39,7 @@ type GameNodeMetadata struct {
 	Check      bool   `json:"check"`
 	Checkmate  bool   `json:"checkmate"`
 	Stalemate  bool   `json:"stalemate"`
-	Evaluation int    `json:"evaluation,omitempty"` // Stockfish score (centipawns), will be used in Phase 7
+	Evaluation *int   `json:"evaluation,omitempty"` // Stockfish score (centipawns), will be used in Phase 7
 	Captured   string `json:"captured,omitempty"`   // Piece that was captured (if any)
 }
 

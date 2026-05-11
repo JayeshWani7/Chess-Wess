@@ -93,6 +93,8 @@ func (s *Server) readPump(c *Client) {
 			s.handleMoveMessage(c, msg)
 		case "ping":
 			c.send <- mustMarshal(WSMessage{Type: "pong"})
+		case "pong":
+			// Ignore pong messages (keepalive response from client)
 		default:
 			log.Printf("ws: unknown message type %q from %s", msg.Type, c.userID)
 		}
