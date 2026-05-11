@@ -1,6 +1,9 @@
 package server
 
-import "net/http"
+import (
+	"net/http"
+	"strings"
+)
 
 func (s *Server) routes() {
 	// CORS middleware wraps all routes
@@ -10,9 +13,12 @@ func (s *Server) routes() {
 	s.mux.Handle("/api/games", cors(s.requireAuth(http.HandlerFunc(s.handleGames))))
 	s.mux.Handle("/api/games/bot", cors(s.requireAuth(http.HandlerFunc(s.handleCreateBotGame))))
 	s.mux.Handle("/api/games/history", cors(s.requireAuth(http.HandlerFunc(s.listMyGames))))
-	s.mux.Handle("/api/games/", cors(s.requireAuth(http.HandlerFunc(s.handleGame))))
+	s.mux.Handle("/api/games/", cors(s.requireAuth(http.HandlerFunc(s.handleGameRoutes))))
 
 	s.mux.Handle("/api/users/", cors(s.requireAuth(http.HandlerFunc(s.handleGetUser))))
+
+	// Phase 2: Timeline/Replay endpoints
+	s.mux.Handle("/api/nodes/", cors(s.requireAuth(http.HandlerFunc(s.handleNodeRoutes))))
 
 	// WebSocket endpoint — auth via query param token
 	s.mux.Handle("/ws", cors(http.HandlerFunc(s.handleWebSocket)))
@@ -22,4 +28,48 @@ func (s *Server) routes() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
+}
+
+// handleGameRoutes routes /api/games/{id}/* endpoints
+func (s *Server) handleGameRoutes(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/games/"), "/")
+	gameID := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+
+	switch {
+	case r.Method == http.MethodGet && action == "":
+		s.getGame(w, r, gameID)
+	case r.Method == http.MethodGet && action == "moves":
+		s.getGameMoves(w, r, gameID)
+	case r.Method == http.MethodGet && action == "timeline":
+		s.handleGameTimeline(w, r)
+	case r.Method == http.MethodGet && action == "replay":
+		s.handleGameReplay(w, r)
+	case r.Method == http.MethodPost && action == "join":
+		s.joinGame(w, r, gameID)
+	case r.Method == http.MethodPost && action == "resign":
+		s.resignGame(w, r, gameID)
+	default:
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	}
+}
+
+// handleNodeRoutes routes /api/nodes/{id}/* endpoints
+func (s *Server) handleNodeRoutes(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
+	nodeID := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+
+	switch {
+	case r.Method == http.MethodGet && action == "branches":
+		s.handleNodeBranches(w, r, nodeID)
+	default:
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	}
 }

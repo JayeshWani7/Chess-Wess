@@ -3,9 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"strings"
 
+	"github.com/ChessWess/backend/db"
 	"github.com/ChessWess/backend/models"
 	"github.com/notnil/chess"
 )
@@ -19,30 +20,6 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 		s.createGame(w, r)
 	default:
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
-	}
-}
-
-// handleGame handles /api/games/{id} — GET (fetch), POST /join, POST /resign.
-func (s *Server) handleGame(w http.ResponseWriter, r *http.Request) {
-	// Extract game ID from path: /api/games/{id}[/action]
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/games/"), "/")
-	gameID := parts[0]
-	action := ""
-	if len(parts) > 1 {
-		action = parts[1]
-	}
-
-	switch {
-	case r.Method == http.MethodGet && action == "":
-		s.getGame(w, r, gameID)
-	case r.Method == http.MethodGet && action == "moves":
-		s.getGameMoves(w, r, gameID)
-	case r.Method == http.MethodPost && action == "join":
-		s.joinGame(w, r, gameID)
-	case r.Method == http.MethodPost && action == "resign":
-		s.resignGame(w, r, gameID)
-	default:
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 	}
 }
 
@@ -106,6 +83,20 @@ func (s *Server) createGame(w http.ResponseWriter, r *http.Request) {
 	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.CreatedAt, &g.UpdatedAt)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Phase 2: Create initial timeline and root node
+	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to create timeline: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	initialFEN := chess.NewGame().Position().String()
+	_, err = db.CreateRootNode(r.Context(), s.db, g.ID, timelineID, userID, initialFEN)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to create root node: %v"}`, err), http.StatusInternalServerError)
 		return
 	}
 
@@ -316,8 +307,21 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start the bot engine in the background
+	// Phase 2: Create initial timeline and root node
+	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to create timeline: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
 	initialFEN := chess.NewGame().Position().String()
+	_, err = db.CreateRootNode(r.Context(), s.db, g.ID, timelineID, userID, initialFEN)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to create root node: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Start the bot engine in the background
 	engine := NewBotEngine(s, g.ID, botID, botColor, req.BotRating)
 	go engine.Run(context.Background(), initialFEN)
 

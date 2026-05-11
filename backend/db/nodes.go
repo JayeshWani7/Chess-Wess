@@ -1,0 +1,319 @@
+package db
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/ChessWess/backend/models"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// CreateTimeline creates a new timeline for a game.
+// The root_node_id is initially NULL and will be set after the root node is created.
+func CreateTimeline(ctx context.Context, pool *pgxpool.Pool, gameID, createdByUser string) (string, error) {
+	var timelineID string
+	err := pool.QueryRow(ctx,
+		`INSERT INTO timelines (game_id, created_by_user) 
+		 VALUES ($1, $2) 
+		 RETURNING id`,
+		gameID, createdByUser,
+	).Scan(&timelineID)
+	if err != nil {
+		return "", fmt.Errorf("CreateTimeline: %w", err)
+	}
+	return timelineID, nil
+}
+
+// CreateRootNode creates the initial (empty) game node for a timeline.
+// The root node has parent_node_id = NULL and move_uci = NULL.
+func CreateRootNode(ctx context.Context, pool *pgxpool.Pool,
+	gameID, timelineID, createdByUser string, initialFEN string) (string, error) {
+
+	var nodeID string
+	err := pool.QueryRow(ctx,
+		`INSERT INTO game_nodes 
+		 (game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion, 
+		  board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
+		 VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, 0, $4, FALSE, FALSE, FALSE, NULL)
+		 RETURNING id`,
+		gameID, timelineID, initialFEN, createdByUser,
+	).Scan(&nodeID)
+	if err != nil {
+		return "", fmt.Errorf("CreateRootNode: %w", err)
+	}
+
+	// Update timeline's root_node_id
+	_, err = pool.Exec(ctx,
+		`UPDATE timelines SET root_node_id = $1 WHERE id = $2`,
+		nodeID, timelineID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("CreateRootNode update timeline: %w", err)
+	}
+
+	return nodeID, nil
+}
+
+// CreateNode creates a new game node as a child of an existing parent node.
+// It automatically creates the parent-child relationship in node_children.
+func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, parentNodeID string) (string, error) {
+	var nodeID string
+
+	promotion := ""
+	if node.Move != nil && node.Move.Promotion != "" {
+		promotion = node.Move.Promotion
+	}
+
+	err := pool.QueryRow(ctx,
+		`INSERT INTO game_nodes 
+		 (game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
+		  board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		 RETURNING id`,
+		node.GameID, node.TimelineID, &parentNodeID,
+		node.Move.UCI, node.Move.SAN, promotion,
+		node.BoardState, node.TurnNumber, node.CreatedByUser,
+		node.Metadata.Check, node.Metadata.Checkmate, node.Metadata.Stalemate,
+		node.Metadata.Captured,
+	).Scan(&nodeID)
+	if err != nil {
+		return "", fmt.Errorf("CreateNode: %w", err)
+	}
+
+	// Record parent-child relationship
+	_, err = pool.Exec(ctx,
+		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)`,
+		parentNodeID, nodeID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("CreateNode insert relationship: %w", err)
+	}
+
+	return nodeID, nil
+}
+
+// GetNode retrieves a single node by ID.
+func GetNode(ctx context.Context, pool *pgxpool.Pool, nodeID string) (*models.GameNode, error) {
+	var node models.GameNode
+	var moveUCI, moveSAN, promotion, capturedPiece *string
+
+	err := pool.QueryRow(ctx,
+		`SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
+		        board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, 
+		        evaluation, captured_piece, created_at
+		 FROM game_nodes WHERE id = $1`,
+		nodeID,
+	).Scan(
+		&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
+		&moveUCI, &moveSAN, &promotion,
+		&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
+		&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
+		&node.Metadata.Evaluation, &capturedPiece,
+		&node.CreatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetNode: %w", err)
+	}
+
+	// Reconstruct Move struct
+	if moveUCI != nil && *moveUCI != "" {
+		node.Move = &models.Move{
+			UCI:       *moveUCI,
+			SAN:       *moveSAN,
+			Promotion: *promotion,
+		}
+	}
+
+	if capturedPiece != nil {
+		node.Metadata.Captured = *capturedPiece
+	}
+
+	return &node, nil
+}
+
+// GetNodePath retrieves all nodes from root to a target node (inclusive).
+// Returns them in order: root → ... → target.
+func GetNodePath(ctx context.Context, pool *pgxpool.Pool, targetNodeID string) (*models.GameNodePath, error) {
+	// Use recursive CTE to traverse upward from target to root, then reverse
+	rows, err := pool.Query(ctx,
+		`WITH RECURSIVE path AS (
+		   -- Base case: start from target node
+		   SELECT id, parent_node_id FROM game_nodes WHERE id = $1
+		   
+		   UNION
+		   
+		   -- Recursive case: get parent
+		   SELECT gn.id, gn.parent_node_id FROM game_nodes gn
+		   INNER JOIN path p ON gn.id = p.parent_node_id
+		 )
+		 SELECT gn.id, gn.game_id, gn.timeline_id, gn.parent_node_id, gn.move_uci, gn.move_san, 
+		        gn.move_promotion, gn.board_state, gn.turn_number, gn.created_by_user, 
+		        gn.is_check, gn.is_checkmate, gn.is_stalemate, gn.evaluation, 
+		        gn.captured_piece, gn.created_at
+		 FROM game_nodes gn
+		 INNER JOIN path ON gn.id = path.id
+		 ORDER BY gn.turn_number ASC`,
+		targetNodeID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetNodePath query: %w", err)
+	}
+	defer rows.Close()
+
+	var nodes []models.GameNode
+	for rows.Next() {
+		var node models.GameNode
+		var moveUCI, moveSAN, promotion, capturedPiece *string
+
+		err := rows.Scan(
+			&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
+			&moveUCI, &moveSAN, &promotion,
+			&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
+			&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
+			&node.Metadata.Evaluation, &capturedPiece,
+			&node.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("GetNodePath scan: %w", err)
+		}
+
+		if moveUCI != nil && *moveUCI != "" {
+			node.Move = &models.Move{
+				UCI:       *moveUCI,
+				SAN:       *moveSAN,
+				Promotion: *promotion,
+			}
+		}
+		if capturedPiece != nil {
+			node.Metadata.Captured = *capturedPiece
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	if len(nodes) == 0 {
+		return nil, fmt.Errorf("GetNodePath: no path found")
+	}
+
+	return &models.GameNodePath{
+		Nodes: nodes,
+		Count: len(nodes),
+	}, nil
+}
+
+// GetNodeBranches retrieves all direct children of a parent node.
+// Returns branch info including node ID, move, and timeline.
+func GetNodeBranches(ctx context.Context, pool *pgxpool.Pool, parentNodeID string) ([]models.NodeBranch, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT gn.id, gn.move_uci, gn.move_san, gn.timeline_id, gn.created_at
+		 FROM game_nodes gn
+		 INNER JOIN node_children nc ON gn.id = nc.child_node_id
+		 WHERE nc.parent_node_id = $1
+		 ORDER BY gn.created_at ASC`,
+		parentNodeID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetNodeBranches: %w", err)
+	}
+	defer rows.Close()
+
+	var branches []models.NodeBranch
+	for rows.Next() {
+		var branch models.NodeBranch
+		var moveUCI, moveSAN *string
+
+		err := rows.Scan(&branch.NodeID, &moveUCI, &moveSAN, &branch.TimelineID, &branch.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("GetNodeBranches scan: %w", err)
+		}
+
+		if moveUCI != nil {
+			branch.MoveUCI = *moveUCI
+		}
+		if moveSAN != nil {
+			branch.MoveSAN = *moveSAN
+		}
+
+		branches = append(branches, branch)
+	}
+
+	return branches, nil
+}
+
+// GetTimelineNodes retrieves all nodes in a timeline, ordered by turn number.
+func GetTimelineNodes(ctx context.Context, pool *pgxpool.Pool, timelineID string) ([]models.GameNode, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
+		        board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate,
+		        evaluation, captured_piece, created_at
+		 FROM game_nodes
+		 WHERE timeline_id = $1
+		 ORDER BY turn_number ASC`,
+		timelineID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineNodes: %w", err)
+	}
+	defer rows.Close()
+
+	var nodes []models.GameNode
+	for rows.Next() {
+		var node models.GameNode
+		var moveUCI, moveSAN, promotion, capturedPiece *string
+
+		err := rows.Scan(
+			&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
+			&moveUCI, &moveSAN, &promotion,
+			&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
+			&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
+			&node.Metadata.Evaluation, &capturedPiece,
+			&node.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("GetTimelineNodes scan: %w", err)
+		}
+
+		if moveUCI != nil && *moveUCI != "" {
+			node.Move = &models.Move{
+				UCI:       *moveUCI,
+				SAN:       *moveSAN,
+				Promotion: *promotion,
+			}
+		}
+		if capturedPiece != nil {
+			node.Metadata.Captured = *capturedPiece
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	return nodes, nil
+}
+
+// GetGameTimelines retrieves all timelines for a game.
+func GetGameTimelines(ctx context.Context, pool *pgxpool.Pool, gameID string) ([]models.Timeline, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT id, game_id, root_node_id, created_at, created_by_user
+		 FROM timelines
+		 WHERE game_id = $1
+		 ORDER BY created_at ASC`,
+		gameID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetGameTimelines: %w", err)
+	}
+	defer rows.Close()
+
+	var timelines []models.Timeline
+	for rows.Next() {
+		var timeline models.Timeline
+		err := rows.Scan(&timeline.ID, &timeline.GameID, &timeline.RootNodeID,
+			&timeline.CreatedAt, &timeline.CreatedByUser)
+		if err != nil {
+			return nil, fmt.Errorf("GetGameTimelines scan: %w", err)
+		}
+		timelines = append(timelines, timeline)
+	}
+
+	return timelines, nil
+}

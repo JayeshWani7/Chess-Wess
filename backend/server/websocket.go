@@ -6,7 +6,10 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/ChessWess/backend/db"
+	"github.com/ChessWess/backend/models"
 	"github.com/gorilla/websocket"
+	"github.com/notnil/chess"
 )
 
 var upgrader = websocket.Upgrader{
@@ -115,7 +118,13 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 
 	ctx := context.Background()
 
-	// Persist the move
+	// Extract promotion piece from UCI if present (e2e8q format)
+	promotion := ""
+	if len(uci) > 4 {
+		promotion = string(uci[4])
+	}
+
+	// Persist the move (legacy game_moves for backwards compatibility)
 	var moveID string
 	err := s.db.QueryRow(
 		ctx,
@@ -127,10 +136,13 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 		c.gameID, c.userID, san, uci, fen,
 	).Scan(&moveID)
 	if err != nil {
-		log.Printf("ws: failed to persist move: %v", err)
+		log.Printf("ws: failed to persist game_move: %v", err)
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to save move"})
 		return
 	}
+
+	// Phase 2: Create game node for timeline system
+	s.createGameNode(ctx, c.gameID, c.userID, uci, san, promotion, fen)
 
 	// Broadcast the move to all players in the room
 	s.hub.Broadcast(c.gameID, WSMessage{
@@ -143,6 +155,70 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 			"fen":       fen,
 		},
 	})
+}
+
+// createGameNode creates a game node for the timeline system
+func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, promotion, fen string) {
+	// Get the primary timeline for this game
+	timelines, err := db.GetGameTimelines(ctx, s.db, gameID)
+	if err != nil || len(timelines) == 0 {
+		log.Printf("ws: failed to get timeline for game %s: %v", gameID, err)
+		return
+	}
+
+	// Get the latest node in the timeline
+	timelineNodes, err := db.GetTimelineNodes(ctx, s.db, timelines[0].ID)
+	if err != nil || len(timelineNodes) == 0 {
+		log.Printf("ws: failed to get timeline nodes for timeline %s: %v", timelines[0].ID, err)
+		return
+	}
+
+	// Get metadata from the board position
+	var isCheck, isCheckmate, isStalemate bool
+
+	// Parse the new position to determine game state
+	fenOpt, err := chess.FEN(fen)
+	if err == nil {
+		game := chess.NewGame(fenOpt)
+		pos := game.Position()
+		status := pos.Status()
+
+		// Determine game state from status
+		isCheckmate = status == chess.Checkmate
+		isStalemate = status == chess.Stalemate
+
+		// Check if in check: has valid moves but is checkmate, or use opponent's perspective
+		// If checkmate, it's also in check. If stalemate, it's not in check.
+		if isCheckmate {
+			isCheck = true
+		} else if !isStalemate && status == chess.NoMethod {
+			// If no moves are valid and it's not checkmate/stalemate, something is wrong
+			// For now, assume check if there are no valid moves but not checkmate/stalemate
+			isCheck = len(game.ValidMoves()) == 0
+		}
+	}
+
+	// Create the node
+	parentNodeID := timelineNodes[len(timelineNodes)-1].ID
+	nodeData := &models.GameNode{
+		GameID:        gameID,
+		TimelineID:    timelines[0].ID,
+		ParentNodeID:  &parentNodeID,
+		Move:          &models.Move{UCI: uci, SAN: san, Promotion: promotion},
+		BoardState:    fen,
+		TurnNumber:    len(timelineNodes),
+		CreatedByUser: userID,
+		Metadata: models.GameNodeMetadata{
+			Check:     isCheck,
+			Checkmate: isCheckmate,
+			Stalemate: isStalemate,
+		},
+	}
+
+	_, err = db.CreateNode(ctx, s.db, nodeData, parentNodeID)
+	if err != nil {
+		log.Printf("ws: failed to create game node: %v", err)
+	}
 }
 
 func mustMarshal(v interface{}) []byte {
