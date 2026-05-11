@@ -1,30 +1,36 @@
 # ChessWess Development Plan
 
 ## Project Vision
-ChessWess is a multiverse timeline-based chess game where every move creates history. Players can rewind, branch alternate realities, and win across multiple timelines simultaneously.
+ChessWess is a social deception chess game combining chess with hidden objectives, betrayal, and psychological gameplay. Players compete not just on tactics but on trust, deception, and reading opponents.
 
-**Core Concept**: "What if chess had Git branches?"
+**Core Concept**: "What if chess had Among Us mechanics?"
+
+**Why This Concept**:
+- Chess is normally deterministic logic; ChessWess adds human psychology
+- Creates drama, betrayal moments, and amazing streamer content
+- Much higher viral/social potential than traditional chess
+- Combines: Chess + Among Us + Secret Hitler + Poker mindgames
 
 ---
 
 ## Tech Stack Overview
 
 ### Frontend
-- **React + TypeScript** — Complex UI state management
-- **TailwindCSS** — Fast styling
-- **React Flow** — Timeline DAG visualization
-- **Zustand** — Game state management
-- **Framer Motion** — Timeline animation effects
+- **React + TypeScript** — Complex UI state management with hidden information handling
+- **TailwindCSS** — Fast, polished styling
+- **Zustand** — Game state management (with role-based visibility)
+- **Framer Motion** — Animations for accusations, reveals, betrayals
+- **React Context** — Hidden vs public state partitioning
 
 ### Backend
-- **Go (recommended)**
-- **WebSockets** (Socket.IO or native ws)
-- **PostgreSQL** — Persistent history graph
-- **Redis** — Realtime state & timeline caching
+- **Go** (recommended for concurrent multiplayer + realtime state)
+- **WebSockets** (native ws or Socket.IO)
+- **PostgreSQL** — Game history, objectives, accusations, votes
+- **Redis** — Realtime state, role synchronization, hidden information caching
 
 ### Chess Engine
 - **chess.js** — Legal moves, validation, checkmate
-- **Stockfish WASM** — Evaluations & analysis
+- **Custom extensions** — Hidden objectives, team logic, deception scoring
 
 ### Infrastructure
 - **Docker** — Containerization
@@ -33,439 +39,484 @@ ChessWess is a multiverse timeline-based chess game where every move creates his
 
 ---
 
-## Phase 1: Basic Multiplayer Chess (Weeks 1-3)
+## Phase 1: Multiplayer Chess Foundation (Weeks 1-2)
 
 ### Goal
-Establish a solid foundation with standard online chess before introducing timeline mechanics.
+Establish solid multiplayer chess before adding deception mechanics.
 
 ### Features
 - [ ] User authentication & sessions
 - [ ] Game rooms & matchmaking
 - [ ] Real chess.js integration
 - [ ] Legal move validation
-- [ ] Game timers (5min, 10min, unlimited)
-- [ ] Basic WebSocket communication
-- [ ] Board rendering (React + simple styling)
+- [ ] Real-time WebSocket communication
+- [ ] Board rendering (React + Tailwind)
+- [ ] Move synchronization (both players see identical state)
 
-### Architecture Decisions
-- **State Management**: Zustand for game state
-- **Database**: PostgreSQL with basic schema
-- **Realtime**: WebSocket connection per room
-- **Move Validation**: chess.js on both client & server
-
-### Database Schema (Minimal)
+### Database Schema (Foundation)
 ```sql
 CREATE TABLE users (
   id UUID PRIMARY KEY,
   username VARCHAR UNIQUE,
+  password_hash VARCHAR,
   created_at TIMESTAMP
 );
 
 CREATE TABLE games (
   id UUID PRIMARY KEY,
-  white_player_id UUID,
-  black_player_id UUID,
+  white_player_id UUID REFERENCES users(id),
+  black_player_id UUID REFERENCES users(id),
   status ENUM('pending', 'active', 'completed'),
+  board_state TEXT (FEN),
+  created_at TIMESTAMP,
+  completed_at TIMESTAMP
+);
+
+CREATE TABLE moves (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id),
+  from_square VARCHAR,
+  to_square VARCHAR,
+  player_id UUID REFERENCES users(id),
+  move_number INT,
   created_at TIMESTAMP
 );
 ```
 
 ### Deliverables
-- [ ] Playable online chess game
-- [ ] 2-player real-time sync
-- [ ] Move history (linear list)
-- [ ] Basic UI mockups implemented
+- [ ] Two players can play full games
+- [ ] Moves sync instantly across WebSocket
+- [ ] No race conditions
+- [ ] Checkmate/stalemate detected correctly
 
 ### Estimated Effort
-- **Backend**: 8-10 hours (rooms, validation, WebSocket)
-- **Frontend**: 10-12 hours (board, moves, timers)
+- **Backend**: 6-8 hours (rooms, validation, WebSocket)
+- **Frontend**: 8-10 hours (board, moves, sync)
 - **Database**: 2-3 hours
 
 ### Success Criteria
-- Two players can play a full game
-- Moves sync instantly
-- No race conditions
-- Checkmate/stalemate detected correctly
+- Full game completable
+- <100ms move latency
+- Server-authoritative (client cannot cheat)
 
 ---
 
-## Phase 2: Immutable Move History (Weeks 4-6)
+## Phase 2: Hidden Objectives System (Weeks 3-4)
 
 ### Goal
-Build the foundation for timelines by storing every move as an immutable node in a graph structure.
+Introduce secret objectives that drive deception and strategy divergence.
 
 ### Features
-- [ ] Game state as DAG (Directed Acyclic Graph)
-- [ ] Immutable GameNode structure
-- [ ] Move tree visualization (simple)
-- [ ] Replay any point in history
-- [ ] Branch detection UI
+- [ ] Secret objective assignment per player
+- [ ] Objective progress tracking
+- [ ] Hidden objective scoring system
+- [ ] Soft vs aggressive objectives
+- [ ] Scoring: Checkmate + Objective completion
+- [ ] Private objective UI (only visible to player)
 
-### Key Data Structure
-```typescript
-type GameNode = {
-  id: string;                    // Unique node ID
-  parentId: string | null;       // Linear history parent
-  childrenIds: string[];         // Branches from this node
-  boardState: Board;             // FEN representation
-  move: Move;                    // Chess move (e.g., e2e4)
-  timelineId: string;           // Which timeline owns this
-  turnNumber: number;           // Turn within timeline
-  createdBy: Player;            // Who made the move
-  metadata: {
-    check: boolean;
-    checkmate: boolean;
-    evaluation: number;         // Stockfish score
-  };
-  createdAt: Date;
-};
-```
+### Objective Categories
 
-### Database Schema Expansion
+**Soft Objectives** (easier, subtle):
+- Lose queen before move 15
+- Keep a pawn alive until move 20
+- Cause stalemate
+- Achieve threefold repetition
+
+**Aggressive Objectives** (risky, obvious if attempted):
+- Ensure both queens die
+- Trigger double check
+- Force en passant capture
+- Make your king move exactly 5 times
+
+**Chaotic Objectives** (high risk/reward):
+- Create symmetric board position
+- Have only pawns remaining
+- Sacrifice all knights
+- Force a specific piece constellation
+
+### Database Expansion
 ```sql
-CREATE TABLE game_nodes (
+CREATE TABLE objective_templates (
   id UUID PRIMARY KEY,
-  game_id UUID REFERENCES games(id),
-  timeline_id UUID,
-  parent_node_id UUID REFERENCES game_nodes(id),
-  board_state TEXT (FEN),        -- Fenstring
-  move_san VARCHAR,              -- Move notation (e2e4)
-  turn_number INT,
-  created_by UUID REFERENCES users(id),
-  created_at TIMESTAMP
+  name VARCHAR,
+  category ENUM('soft', 'aggressive', 'chaotic'),
+  description TEXT,
+  difficulty INT (1-5)
 );
 
-CREATE TABLE node_children (
-  parent_id UUID REFERENCES game_nodes(id),
-  child_id UUID REFERENCES game_nodes(id),
-  PRIMARY KEY (parent_id, child_id)
+CREATE TABLE game_objectives (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id),
+  player_id UUID REFERENCES users(id),
+  objective_id UUID REFERENCES objective_templates(id),
+  completed BOOLEAN DEFAULT FALSE,
+  points_awarded INT DEFAULT 0,
+  created_at TIMESTAMP
 );
 ```
 
 ### Deliverables
-- [ ] Every move stored as immutable node
-- [ ] Move tree reconstruction working
-- [ ] Replay system (click any node, board updates)
-- [ ] FEN serialization for all nodes
+- [ ] Objectives assigned secretly at game start
+- [ ] UI shows only own objective
+- [ ] Progress tracked during game
+- [ ] Scoring calculated post-game
+- [ ] Replay can reveal objectives
 
 ### Estimated Effort
-- **Backend**: 6-8 hours (node storage, tree queries)
-- **Frontend**: 4-6 hours (replay UI, node inspection)
-- **Database Migration**: 3-4 hours
+- **Backend**: 5-6 hours (objective logic, validation)
+- **Frontend**: 4-5 hours (objective UI, progress display)
+- **Database**: 2-3 hours
 
 ### Success Criteria
-- Can replay any move sequence
-- Graph structure is queryable
-- Zero data loss on rewind
-- Performance acceptable for 100+ nodes
+- Players can't see opponent objectives
+- Objectives don't break legal chess
+- Deception creates tension during gameplay
 
 ---
 
-## Phase 3: Timeline Branching (Weeks 7-9) ⭐ MVP Magic
+## Phase 3: Suspicion Mechanics & MVP Launch (Weeks 5-7) ⭐ MVP
 
 ### Goal
-Introduce the core innovation: rewind and create alternate realities.
+Add psychological layer: accusations, voting, deception detection.
 
 ### Features
-- [ ] **Rewind Move** — Go back X turns, create branch
-- [ ] **Timeline Creation** — Each rewind creates new timeline
-- [ ] **Timeline DAG Visualization** — React Flow timeline graph
-- [ ] **Branch Inspection** — Click any branch, see board state
-- [ ] **Active Timeline Switching** — Select which timeline is "active"
+- [ ] **Suspicion Meter** — Players build/lose trust
+- [ ] **Accusations System** — Challenge opponent behavior
+- [ ] **Evidence Display** — Show suspicious moves
+- [ ] **Voting Mechanics** — Expose hidden agendas
+- [ ] **Deception Score** — Track successful bluffs
+- [ ] **Reveal System** — Show objectives after game
 
-### Rewind Mechanics
+### Game Flow
 ```
-Timeline A: Move 1 → Move 2 → Move 3 → Move 4 → Move 5
-                                    ↓
-                             [REWIND TO MOVE 3]
-                                    ↓
-Timeline B: Move 1 → Move 2 → Move 3 → Move 3B → Move 4B
+Move 1 → Player A makes suspicious sacrifice
+       → Player B suspects hidden objective
+       → Player B can accuse ("You're sabotaging!")
+       → Wrong accusation = penalty
+       → Correct accusation = reward
 ```
 
-### UI Components Needed
-- **Timeline Graph** (React Flow)
-  - Nodes represent board states
-  - Edges represent moves
-  - Color-coded by status (winning/losing/neutral)
-- **Board State Inspector**
-  - Select any node, see current board
-- **Timeline Heatmap**
-  - Highlight strong vs weak branches
-- **Branch Control Panel**
-  - Rewind button + turn selector
-  - Timeline switcher
+### Suspicion UI
+- Accusation panel (accuse/endorse/doubt buttons)
+- Deception history graph
+- Trust indicators per player
+- Evidence timeline
 
 ### Database Updates
 ```sql
-CREATE TABLE timelines (
+CREATE TABLE accusations (
   id UUID PRIMARY KEY,
   game_id UUID REFERENCES games(id),
-  root_node_id UUID REFERENCES game_nodes(id),
+  accused_player_id UUID REFERENCES users(id),
+  accuser_player_id UUID REFERENCES users(id),
+  move_number INT,
+  reason VARCHAR,
+  resolved BOOLEAN,
+  correct BOOLEAN,
   created_at TIMESTAMP
 );
 
--- Link nodes to timelines
-ALTER TABLE game_nodes ADD timeline_id UUID REFERENCES timelines(id);
+CREATE TABLE suspicion_events (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id),
+  event_type ENUM('suspicious_move', 'accusation', 'vote', 'reveal'),
+  player_id UUID REFERENCES users(id),
+  details TEXT,
+  created_at TIMESTAMP
+);
 ```
 
+### Mechanics Detail
+
+**Suspicious Moves**:
+- Unnecessary sacrifice
+- Move that weakens position
+- Blocks own attack
+- Protects opponent piece
+
+**Accusation System**:
+- Player can accuse opponent of hidden objective
+- Wrong accusation: -2 points
+- Correct accusation: +3 points, deception revealed early
+- Prevents spam: 1 accusation per 5 moves
+
+**Deception Scoring**:
+- +1 point for fooling opponent
+- +2 points for successful suspicious move
+- -1 point for obvious objective play
+- +5 points if objective completed without suspicion
+
 ### Deliverables
-- [ ] Rewind creates new timeline
-- [ ] Timeline graph renders correctly
-- [ ] Both players see same branching
-- [ ] Board stays consistent across switches
+- [ ] Accusations tracked and resolved
+- [ ] Deception scoring calculated
+- [ ] Replay shows all suspicions
+- [ ] UX smooth for quick accusations
+- [ ] Anti-spam mechanics prevent abuse
 
 ### Estimated Effort
-- **Backend**: 8-10 hours (timeline logic, branching queries)
-- **Frontend**: 12-15 hours (React Flow setup, animations)
-- **Visualization**: 6-8 hours (layout algorithms, heatmap)
+- **Backend**: 6-7 hours (accusation logic, scoring)
+- **Frontend**: 6-8 hours (accusation UI, replay viewer)
+- **Database Migration**: 2-3 hours
 
 ### Success Criteria
-- Players can rewind and branch
-- Up to 50 timelines render smoothly
-- No timeline data corruption
-- Winning conditions evaluate per-timeline
+- Players can accuse/counter-accuse
+- Deception creates engaging gameplay
+- Accusations don't break game flow
+- MVP ready for beta testing
 
 ---
 
-## Phase 4: Timeline Navigation & Controls (Weeks 10-11)
+## Phase 4: Team Modes & Hidden Traitor Chess (Weeks 8-10)
 
 ### Goal
-Make switching between timelines fluid and intuitive.
+Expand to multiplayer modes with team dynamics and secret roles.
 
-### Features
-- [ ] **Jump Between Timelines** — Instant switch, continuous gameplay
-- [ ] **Timeline Labels** — Name branches (e.g., "Sacrificial Queen", "Defensive Hold")
-- [ ] **Breadcrumb Navigation** — Show active path from root
-- [ ] **Divergence Highlights** — Visualize where timelines split
-- [ ] **Performance Optimization** — Lazy load large graphs
+### Mode 1: Hidden Traitor Chess (3-player)
 
-### UI Enhancements
-- Minimap of timeline graph
-- Zoom/pan controls
-- Hotkeys for timeline jumping
-- Timeline sidebar showing stats (material count, evaluation)
+**Setup**:
+- White player (normal objectives)
+- Black player (normal objectives)
+- Shadow Agent (chaos objectives)
 
-### Deliverables
-- [ ] Seamless branch switching
-- [ ] Timeline labels persisted
-- [ ] Graph renders efficiently (1000+ nodes)
-- [ ] UX polished for competitive play
+Shadow Agent's goals:
+- Cause stalemate
+- Create material imbalance
+- Sabotage both sides
+- Trigger chaos conditions
 
-### Estimated Effort
-- **Backend**: 4-5 hours (optimization queries)
-- **Frontend**: 6-8 hours (UX polish, hotkeys, minimap)
+**Gameplay**:
+- All players think they're playing normal chess
+- Shadow Agent's real identity hidden
+- Creates paranoia between White/Black
+- Voting system reveals traitor at end
 
-### Success Criteria
-- Can switch timelines in <100ms
-- No lag with complex graphs
-- Intuitive navigation for new players
+### Mode 2: Secret Role Team Chess (4-player)
 
----
-
-## Phase 5: Time Mechanics & Energy System (Weeks 12-14)
-
-### Goal
-Introduce strategic depth through resource management.
-
-### Features
-- [ ] **Time Energy Pool** — Players get limited rewinds per game
-- [ ] **Energy Costs**
-  - Rewind to N turns ago = costs N energy
-  - Jump timeline = costs 1 energy
-- [ ] **Branch Locking** — Spend energy to freeze a timeline (opponent can't rewind into it)
-- [ ] **Time Collapse** — If 30+ timelines, weakest collapses (auto-deletion)
-- [ ] **Paradox Penalties** — Contradictions weaken timelines gradually
-
-### Game Rules
+**Setup**:
 ```
-Time Energy Pool: 15 (per player, per game)
-
-Actions:
-- Rewind 1 turn: 1 energy
-- Rewind 5 turns: 5 energy
-- Jump timeline: 1 energy
-- Lock timeline: 3 energy
-- Paradox created: -2 energy (penalty)
-
-Win Condition Options (configurable):
-1. Checkmate in ANY timeline
-2. Control majority timelines (>50%)
-3. Score-based: Checkmate + Timeline control = points
+White Team: Player A (Loyal) + Player B (Secret Traitor)
+Black Team: Player C (Loyal) + Player D (Loyal)
 ```
 
-### Database Updates
+**Mechanics**:
+- Team communication allowed
+- Traitor subtly sabotages team
+- Leads to tension/accusations
+- Voting reveals traitor
+
+### Database Expansion
 ```sql
-CREATE TABLE timeline_metadata (
-  timeline_id UUID PRIMARY KEY REFERENCES timelines(id),
-  locked_by_player_id UUID REFERENCES users(id),
-  is_locked BOOLEAN DEFAULT false,
-  energy_cost_to_create INT,
-  stability_score INT (0-100)
+CREATE TABLE game_roles (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id),
+  player_id UUID REFERENCES users(id),
+  role ENUM('white', 'black', 'shadow', 'team_loyal', 'team_traitor'),
+  team ENUM('white', 'black', NULL),
+  hidden BOOLEAN
 );
 
-CREATE TABLE player_energy (
-  game_id UUID,
-  player_id UUID,
-  energy_remaining INT,
-  PRIMARY KEY (game_id, player_id)
+CREATE TABLE team_chats (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id),
+  team ENUM('white', 'black'),
+  sender_id UUID REFERENCES users(id),
+  message TEXT,
+  created_at TIMESTAMP
 );
 ```
 
 ### Deliverables
-- [ ] Energy system fully functional
-- [ ] Timeline locking prevents edits
-- [ ] Collapse system removes old timelines
-- [ ] UI shows energy & costs clearly
+- [ ] 3-player mode fully functional
+- [ ] 4-player team mode working
+- [ ] Role assignment randomized
+- [ ] Team chat secured per team
+- [ ] Traitor mechanics tested
 
 ### Estimated Effort
-- **Backend**: 6-7 hours (energy logic, collapse system)
-- **Frontend**: 4-5 hours (energy UI, cost indicators)
+- **Backend**: 7-8 hours (role logic, team state)
+- **Frontend**: 6-7 hours (team UI, team chat)
+- **Database**: 2-3 hours
 
 ### Success Criteria
-- Energy prevents infinite branching
-- Gameplay becomes strategic
-- Locking mechanic creates tension
-- Collapse prevents performance degradation
+- Traitor mechanics create organic tension
+- Team modes are fun to spectate
+- No role leakage to other players
 
 ---
 
-## Phase 6: Spectator & Replay System (Weeks 15-17)
+## Phase 5: Spectator & Replay System (Weeks 11-13)
 
 ### Goal
-Create replay cinematic experience for sharing & learning.
+Create engaging replay experience that reveals hidden info for viewing.
 
 ### Features
-- [ ] **Spectator Mode** — Watch live multiverse battles
-- [ ] **Replay Engine** — Rewatch any stored game
-- [ ] **Branching Playback** — Animate moves along timeline graph
-- [ ] **Divergence Highlights** — Show "what-if" moments
-- [ ] **AI Commentary** (placeholder for Phase 7)
-- [ ] **Export Replay** — Share as GIF or link
+- [ ] **Spectator Mode** — Watch live games
+- [ ] **Full Replay Viewer** — Rewatch with all hidden info revealed
+- [ ] **Timeline Reconstruction** — Show all suspicions/accusations
+- [ ] **Objective Reveal** — Show objectives after game
+- [ ] **Evidence Highlight** — Annotate suspicious moves
+- [ ] **Export & Share** — Shareable replay links
 
-### Replay UI
-- Timeline graph with animated piece movement
-- Show board state at each node
-- Highlight critical divergence moments
-- Speed controls (1x, 2x, 4x)
-- Jump to interesting moments
+### Replay Information Layers
+- **Public Layer** — Moves, board state (visible during game)
+- **Hidden Layer** — Player objectives, private thoughts
+- **Meta Layer** — Suspicion timeline, accusations, deception scores
+- **Post-Game** — Traitor reveal, scoring breakdown
+
+### UI Components
+- Replay player (move forward/back/skip)
+- Timeline visualization (suspicions marked)
+- Objective cards (shown after game)
+- Commentary box (evidence & moments)
+- Statistics panel (deception metrics)
 
 ### Deliverables
-- [ ] Can replay any completed game
-- [ ] Smooth animations across timelines
-- [ ] Export to shareable link
-- [ ] Spectator mode functional
+- [ ] Any game can be replayed fully
+- [ ] Hidden info revealed in replay
+- [ ] Shareable replay URLs
+- [ ] Spectator mode working
+- [ ] Replay analytics functional
 
 ### Estimated Effort
-- **Backend**: 4-5 hours (replay API, export)
-- **Frontend**: 8-10 hours (animations, playback UI)
+- **Backend**: 4-5 hours (replay API, export logic)
+- **Frontend**: 7-8 hours (replay UI, timeline viz)
 
 ### Success Criteria
-- Replays are smooth & engaging
-- Shareable links work correctly
-- Competitive scene can broadcast
+- Replays are entertaining
+- Hidden info properly hidden during game, revealed after
+- Streamable/shareable content
 
 ---
 
-## Phase 7: AI Features & Stockfish Integration (Weeks 18-20)
+## Phase 6: AI Narrator & Commentary (Weeks 14-16)
 
 ### Goal
-Add intelligent analysis and guidance.
+Add dramatic narration to enhance engagement and content creation.
 
 ### Features
-- [ ] **Stockfish WASM Integration** — Evaluations per timeline
-- [ ] **Best Move Suggestions** — Per timeline, per turn
-- [ ] **Branch Scoring** — Which timelines are winning?
-- [ ] **Evaluation Graph** — Show material advantage over time
-- [ ] **AI Narrator** (optional)
-  - Example: *"White sacrifices reality to save the queen."*
+- [ ] **Move Commentary** — AI analyzes suspicious moves
+- [ ] **Betrayal Callouts** — Detects deception moments
+- [ ] **Suspicion Alerts** — Comments on accusations
+- [ ] **Narrative Arc** — Tells story of game
+- [ ] **Streamer Cues** — Highlights interesting moments
+
+### Commentary Examples
+- "White sacrifices reality to save the queen…"
+- "Suspicion grows around Black's bizarre sacrifice."
+- "That move wasn't legal for the objective. Is Black loyal?"
+- "TRAITOR REVEALED! Player C was sabotaging the whole time!"
 
 ### Implementation
 ```typescript
-// Evaluate all timelines
-async function evaluateTimelineGraph(gameId: string) {
-  const nodes = await getGameNodes(gameId);
-  const evaluations = {};
+type NarrativeEvent = {
+  type: 'suspicious_move' | 'accusation' | 'deception' | 'reveal';
+  timestamp: number;
+  description: string;
+  confidence: 0-100;
+  highlights: Move[];
+};
+
+async function generateNarrative(gameId: string) {
+  const moves = await getMoves(gameId);
+  const objectives = await getObjectives(gameId);
+  const accusations = await getAccusations(gameId);
   
-  for (const node of nodes) {
-    const score = await stockfish.evaluate(node.boardState);
-    evaluations[node.id] = score;
-  }
-  
-  return evaluations;
+  return analyzeDeceptionPatterns(moves, objectives, accusations);
 }
 ```
 
 ### Deliverables
-- [ ] Stockfish evaluations cached in Redis
-- [ ] Per-timeline strength displayed
-- [ ] Suggestion engine working
-- [ ] No lag in UI from analysis
+- [ ] Commentary generated per game
+- [ ] Streamer-friendly highlight moments
+- [ ] Narrative available in replay viewer
+- [ ] Moment highlighting for clips
 
 ### Estimated Effort
-- **Backend**: 6-8 hours (Stockfish integration, caching)
-- **Frontend**: 4-5 hours (evaluation UI)
+- **Backend**: 5-6 hours (pattern detection, comment generation)
+- **Frontend**: 3-4 hours (narrator UI integration)
 
 ### Success Criteria
-- Evaluations <500ms per timeline
-- Suggestions contextually relevant
-- Cache prevents redundant computation
+- Commentary enhances viewing experience
+- Moments naturally highlighted
+- Streamers can create viral clips easily
 
 ---
 
-## Phase 8: Ranked Competitive & Polish (Weeks 21-24)
+## Phase 7: Ranked Meta & Reputation System (Weeks 17-20)
 
 ### Goal
-Production-ready competitive system.
+Create competitive ladder with deception-aware rankings.
 
 ### Features
-- [ ] **ELO Rating System** — Traditional chess rating
-- [ ] **Ladder & Leaderboards** — Player rankings
-- [ ] **Tournaments** — Seasonal competitive events
-- [ ] **Replay Archive** — Searchable game database
-- [ ] **Performance Monitoring** — APM metrics
-- [ ] **Moderation Tools** — Report/ban system
+- [ ] **ELO Rating System** — Track skill + deception
+- [ ] **Deception Rank** — Separate "bluffing" rating
+- [ ] **Reputation Score** — Trust/reliability metric
+- [ ] **Leaderboards** — Traditional + deception-based
+- [ ] **Achievements** — Badges for deception feats
+- [ ] **Anti-Cheat** — Detect objective collaboration
 
-### Ranked Rules
-- Time controls: Bullet (1+0), Blitz (3+0), Rapid (10+0)
-- ELO adjustments based on opponent rating
-- K-factor: 32 for most players, 8 for 2000+ rated
-- Anti-cheat: Detected engine use → ban
+### Ranking Categories
 
-### Database
+**Chess Skill ELO**:
+- Standard 1600 baseline
+- Adjusted by opponent rating
+- K-factor: 32 (most), 16 (2000+), 8 (2400+)
+
+**Deception Rating**:
+- Tracks bluffing success
+- Accusation accuracy
+- Objective completion without detection
+- Traitor success rate
+
+**Reputation Score**:
+- 0-100 scale
+- Increased by: fair play, correct accusations, loyalty
+- Decreased by: ragequits, toxic behavior, detected cheating
+- Affects matchmaking (high trust plays high trust)
+
+### Database Updates
 ```sql
 CREATE TABLE user_ratings (
   user_id UUID PRIMARY KEY,
-  elo INT DEFAULT 1600,
+  chess_elo INT DEFAULT 1600,
+  deception_rating INT DEFAULT 1600,
+  reputation_score INT (0-100) DEFAULT 50,
   games_played INT,
   wins INT,
-  losses INT,
+  deceptions_successful INT,
   updated_at TIMESTAMP
 );
 
-CREATE TABLE tournaments (
+CREATE TABLE achievements (
   id UUID PRIMARY KEY,
-  name VARCHAR,
-  status ENUM('signup', 'active', 'completed'),
-  created_at TIMESTAMP
+  user_id UUID REFERENCES users(id),
+  achievement_type VARCHAR,
+  unlocked_at TIMESTAMP
 );
 ```
 
+### Achievement Examples
+- "Shadow Master" — Win 5 games as traitor
+- "Conspiracy Theorist" — Correct 10 accusations
+- "Puppeteer" — Complete objective without any suspicion
+- "Loyalist" — Win 20 games with 0 accusations
+- "Deception Detector" — Identify traitor correctly 15 times
+
 ### Deliverables
-- [ ] ELO calculation working
-- [ ] Leaderboard updated in real-time
-- [ ] Tournament bracket system
-- [ ] Player profiles complete
+- [ ] ELO system fully functional
+- [ ] Deception rating calculated
+- [ ] Leaderboards updated real-time
+- [ ] Achievement tracking working
+- [ ] Ranked matchmaking implemented
 
 ### Estimated Effort
-- **Backend**: 8-10 hours (ELO, tournaments, moderation)
-- **Frontend**: 6-8 hours (profile pages, leaderboards)
-- **DevOps**: 4-6 hours (monitoring, scaling)
+- **Backend**: 6-7 hours (rating logic, anti-cheat)
+- **Frontend**: 5-6 hours (leaderboard UI, profiles)
 
 ### Success Criteria
-- 1000+ concurrent players
-- <50ms latency
-- Fair ELO distribution
-- Community engagement
+- Ranking system feels fair
+- Deception rating encourages creative play
+- Leaderboards drive engagement
 
 ---
 
@@ -473,34 +524,30 @@ CREATE TABLE tournaments (
 
 | Phase | Duration | Focus | Key Deliverable |
 |-------|----------|-------|-----------------|
-| 1 | 3 weeks | Foundation | Playable chess |
-| 2 | 3 weeks | Architecture | Immutable history |
-| 3 | 3 weeks | **Core Magic** | Timeline branching ⭐ |
-| 4 | 2 weeks | UX Polish | Smooth navigation |
-| 5 | 3 weeks | Gameplay Depth | Energy system |
-| 6 | 3 weeks | Virality | Replay system |
-| 7 | 3 weeks | Intelligence | AI analysis |
-| 8 | 4 weeks | Competition | Ranked ladder |
-| **Total** | **24 weeks** | **~6 months** | **Full product** |
+| 1 | 2 weeks | Foundation | Multiplayer chess |
+| 2 | 2 weeks | Hidden Objectives | Secret mission system |
+| 3 | 3 weeks | **Deception Mechanics** | Accusations & MVP ⭐ |
+| 4 | 3 weeks | Team Modes | Traitor mechanics |
+| 5 | 3 weeks | Replay & Spectating | Engaging content |
+| 6 | 3 weeks | Narration | Dramatic commentary |
+| 7 | 4 weeks | Competitive | Ranked ladder |
+| **Total** | **20 weeks** | **~5 months** | **Full product** |
 
 ---
 
-## Critical Dependencies
+## Critical Phase Dependencies
 
-### Phase Ordering (CANNOT Skip)
 ```
-Phase 1 (Chess) 
+Phase 1 (Chess Foundation)
   ↓
-Phase 2 (History Graph)
+Phase 2 (Hidden Objectives)
   ↓
-Phase 3 (Branching) ← MVP LAUNCHES HERE
+Phase 3 (Suspicion) ← MVP LAUNCHES HERE ⭐
   ↓
-Phase 4 (Navigation)
+Phase 4 (Team Modes)
   ↓
-Phase 5+ (Feature layers)
+Phase 5+ (Polish & Features)
 ```
-
-**Milestone**: Phase 3 completion = MVP ready for early users.
 
 ---
 
@@ -508,202 +555,424 @@ Phase 5+ (Feature layers)
 
 ### What to Ship
 - ✅ Multiplayer chess (Phase 1)
-- ✅ Timeline branching (Phase 3)
-- ✅ Basic graph visualization (Phase 3)
-- ✅ Replay system (Phase 6, simplified)
+- ✅ Hidden objectives (Phase 2)
+- ✅ Suspicion/accusations (Phase 3)
+- ✅ Basic 3-player mode (Phase 4)
 
 ### What to SKIP
-- ❌ AI features
-- ❌ Quantum mechanics (Phase 2+ feature)
-- ❌ Ranked ladder (Phase 8)
-- ❌ Cosmetics & skins
+- ❌ AI narrator
+- ❌ Ranked competitive
+- ❌ 4-player team modes
+- ❌ Cosmetics/skins
 - ❌ Tournament system
 
-**MVP Pitch**: "Chess with branching timelines. Rewind your blunders. Win across multiple realities."
+**MVP Pitch**: "Hidden objectives chess. Play normal chess, but secretly sabotage your opponent. Who can you trust?"
+
+---
+
+## Core Game Mechanics Detail
+
+### Hidden Objective Framework
+
+```typescript
+type Objective = {
+  id: string;
+  name: string;
+  category: 'soft' | 'aggressive' | 'chaotic';
+  description: string;
+  difficulty: 1-5;
+  pointValue: number;
+  
+  // Completion check
+  isCompleted: (gameState: GameState) => boolean;
+  
+  // Difficulty for opponent to detect
+  detectability: 0-100; // lower = harder to notice
+};
+
+// Each player gets 1-2 random objectives
+function assignObjectives(players: Player[]): Map<PlayerId, Objective[]> {
+  return new Map(
+    players.map(p => [
+      p.id,
+      selectRandomObjectives(randomCount(1, 2))
+    ])
+  );
+}
+```
+
+### Suspicion Mechanics
+
+```typescript
+type SuspiciousMove = {
+  moveNumber: number;
+  from: Square;
+  to: Square;
+  suspicionScore: 0-100; // How obvious is hidden objective?
+  possibleObjectives: Objective[]; // What might this achieve?
+};
+
+type Accusation = {
+  accuser: PlayerId;
+  accused: PlayerId;
+  moveNumber: number;
+  correct: boolean;
+  pointsAdjusted: number;
+};
+```
+
+### Scoring System
+
+```
+Final Score = Chess Points + Objective Points + Deception Points
+
+Chess Points:
+  - Win via checkmate: 10
+  - Opponent stalemate: 5
+  - Draw: 3
+  - Loss: 0
+
+Objective Points:
+  - Objective completed: +5 per objective
+  - Objective hidden (opponent didn't suspect): +3 bonus
+
+Deception Points:
+  - Correct accusation of opponent: +2
+  - False accusation against you: -1
+  - Successful deceptive move: +1 per move
+```
 
 ---
 
 ## Architecture Principles
 
-### 1. Immutability
-Every game node is **frozen forever**. Never mutate old board states.
+### 1. Information Hiding
+Client never knows opponent's objective. Server validates everything.
 
-### 2. Isolation
-Each timeline's move validation is **independent**. One timeline's moves don't affect others.
+### 2. Server Authority
+All game logic server-side. Client only renders verified state.
 
-### 3. Caching
-- Timeline state cached in Redis
-- Evaluation scores cached per node
-- Graph structure cached (refreshed on new branch)
+### 3. State Partitioning
+```
+Public State: Board, moves, turn number
+Hidden State (Per Player): Objectives, private deception score
+Meta State (Post-Game): All hidden info revealed
+```
 
-### 4. Incremental Rendering
-- Lazy load timeline graph (don't render 1000 nodes upfront)
-- Virtual scrolling for node lists
-- Minimap for quick navigation
+### 4. Deterministic Replay
+Any game replay produces identical state (for deception analysis).
 
-### 5. Deterministic
-Replay any timeline sequence and get **identical** board state.
+### 5. Anti-Cheat
+- No client-side secret data
+- Objective validation server-only
+- Detect collusion (impossible accusation patterns)
+- Rate-limit accusations
 
 ---
 
 ## Key Technical Challenges & Solutions
 
-### Challenge 1: Timeline Synchronization
-**Problem**: Both players must see identical graphs, no race conditions.
+### Challenge 1: Hidden Information Integrity
+**Problem**: Client must not know opponent objectives, but needs to validate accusations.
 
 **Solution**:
-- WebSocket emits events in order
-- Server processes moves atomically
-- Redis maintains canonical timeline state
-- Client replicates server state
+- Server stores all hidden info
+- Client receives only own objectives + public accusations
+- Accusation validation happens server-side
+- Post-game, server reveals all hidden data (for replay)
 
-### Challenge 2: Efficient Storage
-**Problem**: Storing full board per node = massive database.
-
-**Solution**:
-- Store only **FEN strings** (compact)
-- Store only the **move** (not full board diff)
-- Derive board state from path: Root → Node
-- Compress old timelines after completion
-
-### Challenge 3: Move Validation Across Timelines
-**Problem**: Same position reached via different paths = valid in both?
+### Challenge 2: Anti-Cheat for Objectives
+**Problem**: Players might collude ("Don't accuse me about this objective").
 
 **Solution**:
-- Validate moves in **current timeline context only**
-- Each timeline has independent move history
-- Piece positions derived from move sequence, not global state
+- Track accusation patterns
+- Detect impossible accusations (accusing about objectives they shouldn't know)
+- Rate limit accusations
+- Analysis for suspicious coordination
+
+### Challenge 3: Real-time State Sync with Secrets
+**Problem**: Multiple WebSocket events; must sync board + hide secrets + show accusations.
+
+**Solution**:
+- Separate event streams:
+  - `game:move` → everyone gets board update
+  - `game:accusation` → everyone sees accusation + vote
+  - `player:private` → only recipient sees own objectives
+- Redis tracks canonical state
+- Events processed atomically
 
 ### Challenge 4: Performance at Scale
-**Problem**: 10,000 node games become slow.
+**Problem**: Tracking suspicions + accusations + deception metrics for 1000s of games.
 
 **Solution**:
-- Implement **timeline pruning** (collapse unused branches)
-- Use **B-tree index** on (game_id, timeline_id, turn_number)
-- Cache heatmap calculations in Redis
-- Lazy-load graph UI (viewport-based rendering)
+- Cache objectives in Redis (loaded once per game)
+- Index accusations by (game_id, player_id) for quick lookup
+- Async deception scoring (calculate after game ends)
+- Archive old games (suspicion metrics not needed)
 
-### Challenge 5: Timeline Rendering Complexity
-**Problem**: Large DAGs become spaghetti.
+### Challenge 5: Objective Balance
+**Problem**: Some objectives trivially detectable, others impossible.
 
 **Solution**:
-- Use **Sugiyama layout algorithm** (hierarchical)
-- Implement **minimap** for quick orientation
-- Use **zoom/pan** with performance budget
-- Color-code nodes by strength (green = winning, red = losing)
+- A/B test objectives with beta players
+- Ban obviously bad objectives
+- Weight difficulty score in matchmaking
+- Periodic balance updates
 
 ---
 
-## Tech Decisions & Rationale
+## Database Schema (Full MVP)
 
-### Why React Flow for DAG?
-- Excellent out-of-box for graph visualization
-- Handles 1000+ nodes efficiently
-- Built-in zoom/pan/select
-- Active community
+```sql
+-- Core users & auth
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  email VARCHAR(255) UNIQUE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
 
-### Why Zustand over Redux?
-- Redux has too much boilerplate for game state
-- Zustand: simple, fast, perfect for multiplayer
-- Easy to sync with WebSocket updates
+-- Games table
+CREATE TABLE games (
+  id UUID PRIMARY KEY,
+  game_type ENUM('1v1', '3player', '2v2') DEFAULT '1v1',
+  status ENUM('pending', 'active', 'completed') DEFAULT 'pending',
+  white_player_id UUID REFERENCES users(id),
+  black_player_id UUID REFERENCES users(id),
+  board_state TEXT, -- FEN string
+  current_turn ENUM('white', 'black'),
+  move_count INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT NOW(),
+  completed_at TIMESTAMP,
+  winner_id UUID REFERENCES users(id)
+);
 
-### Why Go over Node.js?
-- Better concurrency (goroutines)
-- Faster WebSocket handling
-- Lower memory footprint
-- Perfect for state-heavy apps
+-- Game roles (for multi-player modes)
+CREATE TABLE game_roles (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
+  player_id UUID REFERENCES users(id),
+  role ENUM('white', 'black', 'shadow', 'team_player', 'traitor'),
+  team ENUM('white', 'black'),
+  is_traitor BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(game_id, player_id)
+);
 
-### Why PostgreSQL over MongoDB?
-- Relational graph queries are complex in MongoDB
-- Need ACID for move integrity
-- FEN strings are simple text (no NoSQL advantage)
+-- Moves table
+CREATE TABLE moves (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
+  player_id UUID REFERENCES users(id),
+  move_number INT NOT NULL,
+  from_square VARCHAR(2) NOT NULL,
+  to_square VARCHAR(2) NOT NULL,
+  san VARCHAR(10), -- Standard algebraic notation
+  promotion_piece VARCHAR,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Objective templates
+CREATE TABLE objective_templates (
+  id UUID PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  category ENUM('soft', 'aggressive', 'chaotic'),
+  description TEXT,
+  difficulty INT CHECK (difficulty >= 1 AND difficulty <= 5),
+  point_value INT DEFAULT 5,
+  detectability INT CHECK (detectability >= 0 AND detectability <= 100),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Objectives assigned to players in a game
+CREATE TABLE game_objectives (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
+  player_id UUID REFERENCES users(id),
+  objective_id UUID REFERENCES objective_templates(id),
+  completed BOOLEAN DEFAULT FALSE,
+  points_awarded INT DEFAULT 0,
+  completed_at TIMESTAMP,
+  was_detected BOOLEAN DEFAULT FALSE, -- Did opponent suspect it?
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Accusations & votes
+CREATE TABLE accusations (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
+  accused_player_id UUID REFERENCES users(id),
+  accuser_player_id UUID REFERENCES users(id),
+  move_number INT,
+  reason VARCHAR(500),
+  resolved BOOLEAN DEFAULT FALSE,
+  correct BOOLEAN, -- Was accusation right?
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Suspicion events for replay
+CREATE TABLE suspicion_events (
+  id UUID PRIMARY KEY,
+  game_id UUID REFERENCES games(id) ON DELETE CASCADE,
+  event_type ENUM('suspicious_move', 'accusation', 'vote', 'objective_completed'),
+  player_id UUID REFERENCES users(id),
+  target_player_id UUID REFERENCES users(id),
+  move_number INT,
+  details TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- User ratings
+CREATE TABLE user_ratings (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  chess_elo INT DEFAULT 1600,
+  deception_rating INT DEFAULT 1600,
+  reputation_score INT DEFAULT 50 CHECK (reputation_score >= 0 AND reputation_score <= 100),
+  games_played INT DEFAULT 0,
+  wins INT DEFAULT 0,
+  losses INT DEFAULT 0,
+  draws INT DEFAULT 0,
+  deceptions_successful INT DEFAULT 0,
+  accusations_correct INT DEFAULT 0,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_games_status ON games(status);
+CREATE INDEX idx_games_white_player ON games(white_player_id);
+CREATE INDEX idx_games_black_player ON games(black_player_id);
+CREATE INDEX idx_moves_game_id ON moves(game_id);
+CREATE INDEX idx_accusations_game_id ON accusations(game_id);
+CREATE INDEX idx_objectives_game_id ON game_objectives(game_id);
+CREATE INDEX idx_suspicion_game_id ON suspicion_events(game_id);
+```
 
 ---
 
-## Resource Allocation
+## Why ShadowChess is the Strongest Concept
 
-### Team Composition (Recommended)
-- **1 Backend Lead** (Go/WebSocket/DB architecture)
-- **1 Frontend Lead** (React/visualization/UX)
-- **1 DevOps/Infrastructure** (Docker, deployment)
+### Viral/Social Potential
+- Normal chess: deterministic, logical
+- ShadowChess: drama, betrayal, mindgames
+- Streamer content gold (accusations, reveals, paranoia)
+- "Among Us for chess players" resonates with communities
 
-**Solo Development**: Expect 12-18 months instead of 6. Prioritize MVP first.
+### Lower Technical Complexity Than ChronoChess
+- No complex timeline DAG visualization
+- No Stockfish integration needed
+- Simpler state management (role-based vs timeline branching)
+- Faster MVP iteration
+
+### Higher User Engagement
+- Psychology > logic
+- Replayability (deception changes each game)
+- Social dynamics create community
+- Easy to learn, deep to master
+
+### Market Position
+- Nobody is building social deception chess
+- Massive untapped design space
+- Bridges chess + party game audiences
+- Potential to launch "Party Chess" genre
 
 ---
 
 ## Success Metrics
 
 ### User Engagement
-- [ ] 100+ games completed (Phase 3 launch)
-- [ ] Average 5 rewinds per game (branching adoption)
-- [ ] 50% of replays viewed by non-players (virality)
+- [ ] 500+ games completed (MVP launch)
+- [ ] Average 3+ accusations per game
+- [ ] 40% of replays watched by non-players (social sharing)
+- [ ] 50% return player rate within 7 days
 
 ### Technical Performance
 - [ ] <100ms move latency (P99)
-- [ ] <500ms timeline graph render
-- [ ] <50ms rewind operation
-- [ ] 1000+ concurrent users (EC2 scale test)
+- [ ] <50ms accusation response
+- [ ] 1000+ concurrent games supported
+- [ ] 99.9% uptime
 
-### Business Metrics
-- [ ] 10,000 MAU by end of Year 1
-- [ ] 95% positive reviews/ratings
-- [ ] Successful tournament with 100+ players
-
----
-
-## Launch Checklist
-
-### Before MVP Release
-- [ ] All Phase 1-3 features working
-- [ ] Database migrations tested in production
-- [ ] Load testing (simulate 100 concurrent games)
-- [ ] Security audit (no SQL injection, CORS correct)
-- [ ] UX testing with 10+ beta players
-- [ ] Mobile responsive design (basic)
-
-### Beta Launch
-- [ ] Closed beta with 100 players
-- [ ] Collect feedback
-- [ ] Fix critical bugs
-- [ ] Optimize performance
-
-### Public Launch
-- [ ] Marketing campaign
-- [ ] Press release
-- [ ] Community Discord/Reddit
-- [ ] Content creator outreach
+### Community & Content
+- [ ] 50+ streamers featuring game
+- [ ] 1M+ YouTube views (first month)
+- [ ] Active Discord with 5K+ members
+- [ ] Top Reddit posts in r/chess & r/gaming
 
 ---
 
 ## File Structure (Recommended)
 
 ```
-ChessWess/
+ShadowChess/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── Board/
-│   │   │   ├── Timeline/
-│   │   │   ├── ReplayPlayer/
+│   │   │   │   ├── ChessBoard.tsx
+│   │   │   │   ├── Square.tsx
+│   │   │   │   └── PieceIcon.tsx
+│   │   │   ├── Accusations/
+│   │   │   │   ├── AccusationPanel.tsx
+│   │   │   │   └── SuspicionMeter.tsx
+│   │   │   ├── Objectives/
+│   │   │   │   ├── ObjectiveDisplay.tsx
+│   │   │   │   └── DeceptionScore.tsx
+│   │   │   ├── Replay/
+│   │   │   │   ├── ReplayViewer.tsx
+│   │   │   │   └── TimelineViz.tsx
+│   │   │   └── Game/
+│   │   │       ├── GamePage.tsx
+│   │   │       └── GameStatus.tsx
 │   │   ├── store/
-│   │   │   └── gameStore.ts (Zustand)
+│   │   │   ├── gameStore.ts
+│   │   │   ├── authStore.ts
+│   │   │   └── deceptionStore.ts
 │   │   ├── utils/
-│   │   │   └── chess.ts
-│   ├── package.json
-│   └── README.md
+│   │   │   ├── api.ts
+│   │   │   └── wsClient.ts
+│   │   └── pages/
+│   │       ├── LobbyPage.tsx
+│   │       ├── GamePage.tsx
+│   │       ├── ReplayPage.tsx
+│   │       └── LeaderboardPage.tsx
+│   └── package.json
+│
 ├── backend/
 │   ├── main.go
 │   ├── server/
+│   │   ├── server.go
+│   │   ├── websocket.go
+│   │   ├── auth.go
+│   │   ├── games.go
+│   │   ├── accusations.go
+│   │   ├── objectives.go
+│   │   └── replay.go
 │   ├── models/
+│   │   ├── user.go
 │   │   ├── game.go
-│   │   ├── timeline.go
-│   │   └── node.go
+│   │   ├── objective.go
+│   │   ├── accusation.go
+│   │   └── role.go
 │   ├── db/
-│   │   └── migrations/
+│   │   ├── db.go
+│   │   ├── migrations/
+│   │   │   ├── 001_init.sql
+│   │   │   ├── 002_objectives.sql
+│   │   │   ├── 003_accusations.sql
+│   │   │   └── 004_ratings.sql
+│   │   ├── queries/
+│   │   │   └── queries.go
+│   │   └── migrations.go
+│   ├── util/
+│   │   ├── chess.go
+│   │   └── deception.go
 │   └── go.mod
+│
 ├── docker-compose.yml
 ├── .env.example
-└── PLAN.md (this file)
+├── README.md
+└── PLAN.md
 ```
 
 ---
@@ -711,59 +980,61 @@ ChessWess/
 ## Next Steps
 
 ### Immediate (Week 1)
-1. [ ] Set up project repo (GitHub)
-2. [ ] Create frontend & backend project structure
-3. [ ] Set up PostgreSQL locally
-4. [ ] Initialize Redis
-5. [ ] Create initial database schema
+1. [ ] Set up GitHub repo
+2. [ ] Initialize frontend & backend projects
+3. [ ] Configure PostgreSQL & Redis locally
+4. [ ] Design database schema (Phase 1-2)
+5. [ ] Create API specifications
 
 ### Week 2-3 (Phase 1)
-1. [ ] Implement chess.js integration
+1. [ ] Implement basic authentication
 2. [ ] Build WebSocket server
 3. [ ] Create game rooms logic
-4. [ ] Build basic React board component
-5. [ ] Deploy to staging
+4. [ ] Implement chess.js integration
+5. [ ] Build React board component
+6. [ ] Deploy to staging
 
-### Week 4+ (Phase 2)
-Begin immutable graph implementation...
-
----
-
-## Questions to Answer Before Starting
-
-1. **Team**: Solo or team? (Affects timeline: 6 months vs 12-18)
-2. **Infrastructure**: Self-hosted or cloud? (AWS, Vercel, Railway?)
-3. **Monetization**: Free forever or premium? (Affects Phase 8 design)
-4. **Scope**: Full Phase 8 or stop at MVP (Phase 3)?
-5. **Time Commitment**: Full-time or side project? (Affects feasibility)
+### Week 4-5 (Phase 2-3)
+1. [ ] Objective template system
+2. [ ] Accusation mechanics
+3. [ ] Suspicion UI
+4. [ ] Replay viewer (basic)
+5. [ ] MVP testing with 20 beta players
 
 ---
 
-## Resources
+## Frequently Asked Questions
 
-### Learning
-- React Flow docs: https://reactflow.dev/
-- Zustand docs: https://github.com/pmndrs/zustand
-- chess.js docs: https://github.com/jhlywa/chess.js
-- PostgreSQL graph queries: Window functions, CTEs
+### Why ShadowChess over traditional chess sites?
+Traditional sites optimize for skill-based ranking. ShadowChess adds psychology, social dynamics, and deception. This creates narrative, drama, and community engagement far beyond pure chess rating systems.
 
-### Tools
-- **Local**: Docker Compose (Postgres + Redis)
-- **Staging**: Vercel (frontend) + Railway (backend)
-- **Monitoring**: LogRocket (frontend), DataDog (backend)
+### How do you prevent objective collusion?
+Server validates all accusations and deception patterns. Impossible accusations (knowing secrets you shouldn't) trigger rate-limiting and detection flags. Post-game analysis identifies suspicious coordination.
+
+### Will experienced chess players dominate?
+No. Deception rating is separate from chess ELO. A weak chess player with excellent deception instincts can beat a strong chess player with poor psychology. This balances skill levels.
+
+### What makes this viral?
+The "moment of betrayal" when traitor is revealed. Streamers will clip these for social media. The "guess who the traitor is" hook has proven engagement power (Among Us, Secret Hitler, Mafia).
+
+### How do you monetize without P2W?
+- Cosmetics (piece skins, board themes)
+- Battle pass (seasonal achievements)
+- Tournaments (spectator access)
+- Premium replays (AI analysis)
+- All core gameplay is free forever
 
 ---
 
-## Final Notes
+## Final Thoughts
 
-**This is not a side project.** ChessWess is a 6-month full-time commitment or 12-18 months part-time.
+ShadowChess transforms chess from a game of pure logic into a game of **human psychology**. 
 
-The magic moment happens in **Phase 3** when branching works. That's when people will understand the vision.
+The innovation isn't technical—it's conceptual. You're taking a 1500-year-old game and adding the element it never had: **deception**.
 
-Every other phase builds on that foundation.
+This is why it has exceptional viral potential. Every game generates stories. Every replay is drama. Every accusation is a memorable moment.
 
-Start small, launch MVP, iterate with users.
+**The MVP proves the concept.** Get multiplayer chess + hidden objectives + accusations working, and the game sells itself.
 
-**The innovation is the timeline graph. Everything else is execution.**
+Good luck. This is going to be remarkable. 🎭♟️
 
-Good luck. This is going to be incredible. 🚀
