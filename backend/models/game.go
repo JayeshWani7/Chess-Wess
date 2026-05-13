@@ -14,15 +14,16 @@ const (
 
 // Game represents a chess match between two players.
 type Game struct {
-	ID             string     `json:"id"`
-	WhitePlayerID  *string    `json:"white_player_id"`
-	BlackPlayerID  *string    `json:"black_player_id"`
-	Status         GameStatus `json:"status"`
-	TimeControl    int        `json:"time_control"` // seconds per player; 0 = unlimited
-	WinnerID       *string    `json:"winner_id,omitempty"`
-	Result         *string    `json:"result,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID               string     `json:"id"`
+	WhitePlayerID    *string    `json:"white_player_id"`
+	BlackPlayerID    *string    `json:"black_player_id"`
+	Status           GameStatus `json:"status"`
+	TimeControl      int        `json:"time_control"` // seconds per player; 0 = unlimited
+	ActiveTimelineID *string    `json:"active_timeline_id,omitempty"`
+	WinnerID         *string    `json:"winner_id,omitempty"`
+	Result           *string    `json:"result,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // GameMove represents a single move within a game.

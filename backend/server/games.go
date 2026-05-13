@@ -25,7 +25,7 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listGames(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(),
-		`SELECT id, white_player_id, black_player_id, status, time_control, created_at, updated_at
+		`SELECT id, white_player_id, black_player_id, status, time_control, active_timeline_id, created_at, updated_at
 		 FROM games WHERE status = 'pending' ORDER BY created_at DESC LIMIT 50`)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -36,7 +36,7 @@ func (s *Server) listGames(w http.ResponseWriter, r *http.Request) {
 	games := []models.Game{}
 	for rows.Next() {
 		var g models.Game
-		if err := rows.Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.CreatedAt, &g.UpdatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.ActiveTimelineID, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			continue
 		}
 		games = append(games, g)
@@ -100,6 +100,12 @@ func (s *Server) createGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := db.SetActiveTimelineID(r.Context(), s.db, g.ID, timelineID); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to set active timeline: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+	g.ActiveTimelineID = &timelineID
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(g)
@@ -108,9 +114,9 @@ func (s *Server) createGame(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getGame(w http.ResponseWriter, r *http.Request, gameID string) {
 	var g models.Game
 	err := s.db.QueryRow(r.Context(),
-		`SELECT id, white_player_id, black_player_id, status, time_control, winner_id, result, created_at, updated_at
+		`SELECT id, white_player_id, black_player_id, status, time_control, active_timeline_id, winner_id, result, created_at, updated_at
 		 FROM games WHERE id = $1`, gameID,
-	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.WinnerID, &g.Result, &g.CreatedAt, &g.UpdatedAt)
+	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.ActiveTimelineID, &g.WinnerID, &g.Result, &g.CreatedAt, &g.UpdatedAt)
 	if err != nil {
 		http.Error(w, `{"error":"game not found"}`, http.StatusNotFound)
 		return

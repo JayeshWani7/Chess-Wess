@@ -46,6 +46,8 @@ func (s *Server) handleGameRoutes(w http.ResponseWriter, r *http.Request) {
 		s.getGameMoves(w, r, gameID)
 	case r.Method == http.MethodGet && action == "timeline":
 		s.handleGameTimeline(w, r)
+	case r.Method == http.MethodPost && action == "timeline":
+		s.handleGameTimeline(w, r)
 	case r.Method == http.MethodGet && action == "replay":
 		s.handleGameReplay(w, r)
 	case r.Method == http.MethodPost && action == "join":

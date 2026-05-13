@@ -54,6 +54,35 @@ func CreateRootNode(ctx context.Context, pool *pgxpool.Pool,
 	return nodeID, nil
 }
 
+// CreateBranchRootNode creates a root node for a branched timeline at a specific turn.
+// The root node has parent_node_id = NULL and move fields = NULL.
+func CreateBranchRootNode(ctx context.Context, pool *pgxpool.Pool,
+	gameID, timelineID, createdByUser, boardState string, turnNumber int) (string, error) {
+
+	var nodeID string
+	err := pool.QueryRow(ctx,
+		`INSERT INTO game_nodes 
+		 (game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion, 
+		  board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
+		 VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, $4, $5, FALSE, FALSE, FALSE, NULL)
+		 RETURNING id`,
+		gameID, timelineID, boardState, turnNumber, createdByUser,
+	).Scan(&nodeID)
+	if err != nil {
+		return "", fmt.Errorf("CreateBranchRootNode: %w", err)
+	}
+
+	_, err = pool.Exec(ctx,
+		`UPDATE timelines SET root_node_id = $1 WHERE id = $2`,
+		nodeID, timelineID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("CreateBranchRootNode update timeline: %w", err)
+	}
+
+	return nodeID, nil
+}
+
 // CreateNode creates a new game node as a child of an existing parent node.
 // It automatically creates the parent-child relationship in node_children.
 func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, parentNodeID string) (string, error) {
@@ -90,6 +119,19 @@ func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, 
 	}
 
 	return nodeID, nil
+}
+
+// LinkNodeChild records a parent-child relationship between two nodes.
+func LinkNodeChild(ctx context.Context, pool *pgxpool.Pool, parentNodeID, childNodeID string) error {
+	_, err := pool.Exec(ctx,
+		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)`
+		+ ` ON CONFLICT DO NOTHING`,
+		parentNodeID, childNodeID,
+	)
+	if err != nil {
+		return fmt.Errorf("LinkNodeChild: %w", err)
+	}
+	return nil
 }
 
 // GetNode retrieves a single node by ID.
@@ -288,6 +330,55 @@ func GetTimelineNodes(ctx context.Context, pool *pgxpool.Pool, timelineID string
 	}
 
 	return nodes, nil
+}
+
+// GetLatestTimelineNode retrieves the most recent node in a timeline.
+func GetLatestTimelineNode(ctx context.Context, pool *pgxpool.Pool, timelineID string) (*models.GameNode, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
+		        board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate,
+		        evaluation, captured_piece, created_at
+		 FROM game_nodes
+		 WHERE timeline_id = $1
+		 ORDER BY turn_number DESC
+		 LIMIT 1`,
+		timelineID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetLatestTimelineNode: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, fmt.Errorf("GetLatestTimelineNode: no nodes found")
+	}
+
+	var node models.GameNode
+	var moveUCI, moveSAN, promotion, capturedPiece *string
+
+	if err := rows.Scan(
+		&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
+		&moveUCI, &moveSAN, &promotion,
+		&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
+		&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
+		&node.Metadata.Evaluation, &capturedPiece,
+		&node.CreatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("GetLatestTimelineNode scan: %w", err)
+	}
+
+	if moveUCI != nil && *moveUCI != "" {
+		node.Move = &models.Move{
+			UCI:       *moveUCI,
+			SAN:       *moveSAN,
+			Promotion: *promotion,
+		}
+	}
+	if capturedPiece != nil {
+		node.Metadata.Captured = *capturedPiece
+	}
+
+	return &node, nil
 }
 
 // GetGameTimelines retrieves all timelines for a game.

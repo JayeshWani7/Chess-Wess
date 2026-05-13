@@ -16,6 +16,15 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	gameID := parts[0]
+	action := ""
+	if len(parts) > 2 {
+		action = parts[2]
+	}
+
+	if action == "active" {
+		s.handleActiveTimeline(w, r, gameID)
+		return
+	}
 
 	if r.Method != http.MethodGet {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -24,6 +33,12 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 
 	// Get all timelines for this game
 	timelines, err := db.GetGameTimelines(r.Context(), s.db, gameID)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	activeTimelineID, err := db.GetActiveTimelineID(r.Context(), s.db, gameID)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
@@ -50,8 +65,9 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"game_id":   gameID,
-		"timelines": result,
+		"game_id":            gameID,
+		"active_timeline_id": activeTimelineID,
+		"timelines":          result,
 	})
 }
 
@@ -72,21 +88,28 @@ func (s *Server) handleGameReplay(w http.ResponseWriter, r *http.Request) {
 
 	nodeID := r.URL.Query().Get("node_id")
 
-	// If no node_id provided, get the latest node in the primary timeline
+	// If no node_id provided, get the latest node in the active timeline
 	if nodeID == "" {
-		timelines, err := db.GetGameTimelines(r.Context(), s.db, gameID)
-		if err != nil || len(timelines) == 0 {
-			http.Error(w, `{"error":"no timelines found"}`, http.StatusNotFound)
+		timelineID, err := db.GetActiveTimelineID(r.Context(), s.db, gameID)
+		if err != nil {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 			return
 		}
+		if timelineID == nil || *timelineID == "" {
+			timelines, err := db.GetGameTimelines(r.Context(), s.db, gameID)
+			if err != nil || len(timelines) == 0 {
+				http.Error(w, `{"error":"no timelines found"}`, http.StatusNotFound)
+				return
+			}
+			timelineID = &timelines[0].ID
+		}
 
-		nodes, err := db.GetTimelineNodes(r.Context(), s.db, timelines[0].ID)
-		if err != nil || len(nodes) == 0 {
+		latest, err := db.GetLatestTimelineNode(r.Context(), s.db, *timelineID)
+		if err != nil {
 			http.Error(w, `{"error":"no nodes found"}`, http.StatusNotFound)
 			return
 		}
-
-		nodeID = nodes[len(nodes)-1].ID
+		nodeID = latest.ID
 	}
 
 	// Get path from root to target node
@@ -98,6 +121,49 @@ func (s *Server) handleGameReplay(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(path)
+}
+
+// handleActiveTimeline handles GET/POST /api/games/{id}/timeline/active
+func (s *Server) handleActiveTimeline(w http.ResponseWriter, r *http.Request, gameID string) {
+	switch r.Method {
+	case http.MethodGet:
+		activeTimelineID, err := db.GetActiveTimelineID(r.Context(), s.db, gameID)
+		if err != nil {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"game_id":            gameID,
+			"active_timeline_id": activeTimelineID,
+		})
+	case http.MethodPost:
+		var payload struct {
+			TimelineID string `json:"timeline_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.TimelineID == "" {
+			http.Error(w, `{"error":"timeline_id required"}`, http.StatusBadRequest)
+			return
+		}
+		if err := db.SetActiveTimelineID(r.Context(), s.db, gameID, payload.TimelineID); err != nil {
+			http.Error(w, `{"error":"timeline not found"}`, http.StatusNotFound)
+			return
+		}
+		s.hub.Broadcast(gameID, WSMessage{
+			Type: "timeline_switched",
+			Payload: map[string]string{
+				"timeline_id": payload.TimelineID,
+			},
+		})
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"game_id":            gameID,
+			"active_timeline_id": payload.TimelineID,
+		})
+	default:
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+	}
 }
 
 // handleNodeBranches handles GET /api/nodes/{id}/branches — returns children of a node.

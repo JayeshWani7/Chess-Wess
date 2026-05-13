@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -91,6 +92,10 @@ func (s *Server) readPump(c *Client) {
 		switch msg.Type {
 		case "move":
 			s.handleMoveMessage(c, msg)
+		case "rewind":
+			s.handleRewindMessage(c, msg)
+		case "switch_timeline":
+			s.handleSwitchTimelineMessage(c, msg)
 		case "ping":
 			c.send <- mustMarshal(WSMessage{Type: "pong"})
 		case "pong":
@@ -112,6 +117,8 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	uci, _ := payload["uci"].(string)
 	san, _ := payload["san"].(string)
 	fen, _ := payload["fen"].(string)
+	timelineID, _ := payload["timeline_id"].(string)
+	parentNodeID, _ := payload["parent_node_id"].(string)
 
 	if uci == "" || san == "" || fen == "" {
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "move requires uci, san, and fen"})
@@ -144,7 +151,12 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	}
 
 	// Phase 2: Create game node for timeline system
-	s.createGameNode(ctx, c.gameID, c.userID, uci, san, promotion, fen)
+	_, err = s.createGameNode(ctx, c.gameID, c.userID, uci, san, promotion, fen, timelineID, parentNodeID)
+	if err != nil {
+		log.Printf("ws: failed to create game node: %v", err)
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to save timeline move"})
+		return
+	}
 
 	// Broadcast the move to all players in the room
 	s.hub.Broadcast(c.gameID, WSMessage{
@@ -159,20 +171,49 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	})
 }
 
-// createGameNode creates a game node for the timeline system
-func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, promotion, fen string) {
-	// Get the primary timeline for this game
-	timelines, err := db.GetGameTimelines(ctx, s.db, gameID)
-	if err != nil || len(timelines) == 0 {
-		log.Printf("ws: failed to get timeline for game %s: %v", gameID, err)
-		return
+// createGameNode creates a game node for the timeline system.
+// If timelineID or parentNodeID are empty, they are resolved from the latest node.
+func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, promotion, fen, timelineID, parentNodeID string) (string, error) {
+	var parentNode *models.GameNode
+
+	if parentNodeID != "" {
+		pn, err := db.GetNode(ctx, s.db, parentNodeID)
+		if err != nil {
+			return "", fmt.Errorf("createGameNode: parent node not found: %w", err)
+		}
+		if pn.GameID != gameID {
+			return "", fmt.Errorf("createGameNode: parent node not in game")
+		}
+		parentNode = pn
+		if timelineID == "" {
+			timelineID = pn.TimelineID
+		} else if timelineID != pn.TimelineID {
+			return "", fmt.Errorf("createGameNode: parent node not in timeline")
+		}
 	}
 
-	// Get the latest node in the timeline
-	timelineNodes, err := db.GetTimelineNodes(ctx, s.db, timelines[0].ID)
-	if err != nil || len(timelineNodes) == 0 {
-		log.Printf("ws: failed to get timeline nodes for timeline %s: %v", timelines[0].ID, err)
-		return
+	if timelineID == "" {
+		activeTimelineID, err := db.GetActiveTimelineID(ctx, s.db, gameID)
+		if err != nil {
+			return "", fmt.Errorf("createGameNode: failed to read active timeline: %w", err)
+		}
+		if activeTimelineID != nil && *activeTimelineID != "" {
+			timelineID = *activeTimelineID
+		} else {
+			timelines, err := db.GetGameTimelines(ctx, s.db, gameID)
+			if err != nil || len(timelines) == 0 {
+				return "", fmt.Errorf("createGameNode: no timelines for game")
+			}
+			timelineID = timelines[0].ID
+		}
+	}
+
+	if parentNode == nil {
+		latest, err := db.GetLatestTimelineNode(ctx, s.db, timelineID)
+		if err != nil {
+			return "", fmt.Errorf("createGameNode: latest node not found: %w", err)
+		}
+		parentNode = latest
 	}
 
 	// Get metadata from the board position
@@ -201,14 +242,14 @@ func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, p
 	}
 
 	// Create the node
-	parentNodeID := timelineNodes[len(timelineNodes)-1].ID
+	resolvedParentID := parentNode.ID
 	nodeData := &models.GameNode{
 		GameID:        gameID,
-		TimelineID:    timelines[0].ID,
-		ParentNodeID:  &parentNodeID,
+		TimelineID:    timelineID,
+		ParentNodeID:  &resolvedParentID,
 		Move:          &models.Move{UCI: uci, SAN: san, Promotion: promotion},
 		BoardState:    fen,
-		TurnNumber:    len(timelineNodes),
+		TurnNumber:    parentNode.TurnNumber + 1,
 		CreatedByUser: userID,
 		Metadata: models.GameNodeMetadata{
 			Check:     isCheck,
@@ -217,10 +258,89 @@ func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, p
 		},
 	}
 
-	_, err = db.CreateNode(ctx, s.db, nodeData, parentNodeID)
-	if err != nil {
-		log.Printf("ws: failed to create game node: %v", err)
+	return db.CreateNode(ctx, s.db, nodeData, resolvedParentID)
+}
+
+// handleRewindMessage creates a new timeline branching from a prior node.
+// Expected payload: { "node_id": "<target_node_id>" }
+func (s *Server) handleRewindMessage(c *Client, msg WSMessage) {
+	payload, ok := msg.Payload.(map[string]interface{})
+	if !ok {
+		return
 	}
+
+	nodeID, _ := payload["node_id"].(string)
+	if nodeID == "" {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "rewind requires node_id"})
+		return
+	}
+
+	ctx := context.Background()
+	fromNode, err := db.GetNode(ctx, s.db, nodeID)
+	if err != nil {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "node not found"})
+		return
+	}
+	if fromNode.GameID != c.gameID {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "node not in game"})
+		return
+	}
+
+	timelineID, err := db.CreateTimeline(ctx, s.db, c.gameID, c.userID)
+	if err != nil {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to create timeline"})
+		return
+	}
+
+	rootNodeID, err := db.CreateBranchRootNode(ctx, s.db, c.gameID, timelineID, c.userID, fromNode.BoardState, fromNode.TurnNumber)
+	if err != nil {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to create branch root"})
+		return
+	}
+
+	if err := db.LinkNodeChild(ctx, s.db, fromNode.ID, rootNodeID); err != nil {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to link branch"})
+		return
+	}
+
+	s.hub.Broadcast(c.gameID, WSMessage{
+		Type: "timeline_created",
+		Payload: map[string]interface{}{
+			"timeline_id":  timelineID,
+			"root_node_id": rootNodeID,
+			"from_node_id": fromNode.ID,
+			"board_state":  fromNode.BoardState,
+			"turn_number":  fromNode.TurnNumber,
+		},
+	})
+}
+
+// handleSwitchTimelineMessage sets the active timeline for the game.
+// Expected payload: { "timeline_id": "<timeline_id>" }
+func (s *Server) handleSwitchTimelineMessage(c *Client, msg WSMessage) {
+	payload, ok := msg.Payload.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	timelineID, _ := payload["timeline_id"].(string)
+	if timelineID == "" {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "timeline_id required"})
+		return
+	}
+
+	ctx := context.Background()
+	if err := db.SetActiveTimelineID(ctx, s.db, c.gameID, timelineID); err != nil {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "timeline not found"})
+		return
+	}
+
+	s.hub.Broadcast(c.gameID, WSMessage{
+		Type: "timeline_switched",
+		Payload: map[string]string{
+			"timeline_id": timelineID,
+		},
+	})
 }
 
 func mustMarshal(v interface{}) []byte {

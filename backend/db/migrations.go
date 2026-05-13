@@ -15,6 +15,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		createGamesTable,
 		createGameMovesTable,
 		createTimelinesTable,
+		alterGamesAddActiveTimeline,
 		createGameNodesTable,
 		createNodeChildrenTable,
 	}
@@ -95,6 +96,24 @@ CREATE TABLE IF NOT EXISTS timelines (
 );
 
 CREATE INDEX IF NOT EXISTS idx_timelines_game_id ON timelines(game_id);
+`
+
+const alterGamesAddActiveTimeline = `
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='games' AND column_name='active_timeline_id') THEN
+    ALTER TABLE games ADD COLUMN active_timeline_id UUID;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'games_active_timeline_fkey'
+  ) THEN
+    ALTER TABLE games
+      ADD CONSTRAINT games_active_timeline_fkey
+      FOREIGN KEY (active_timeline_id) REFERENCES timelines(id);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_games_active_timeline_id ON games(active_timeline_id);
 `
 
 const createGameNodesTable = `

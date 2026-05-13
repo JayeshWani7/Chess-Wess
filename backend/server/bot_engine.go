@@ -187,6 +187,11 @@ func (b *BotEngine) playMove(ctx context.Context, game *chess.Game) {
 		return
 	}
 
+	_, err = b.server.createGameNode(ctx, b.gameID, b.botUserID, uci, san, "", fen, "", "")
+	if err != nil {
+		log.Printf("bot: failed to create timeline node: %v", err)
+	}
+
 	b.server.hub.Broadcast(b.gameID, WSMessage{
 		Type: "move",
 		Payload: map[string]interface{}{
