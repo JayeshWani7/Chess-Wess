@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useGameStore } from "../store/gameStore";
 import { useAuthStore } from "../store/authStore";
 import { wsClient, type WSMessage } from "../utils/wsClient";
@@ -8,6 +8,7 @@ import MoveHistory from "../components/Game/MoveHistory";
 import PlayerClock from "../components/Game/PlayerClock";
 import GameStatus from "../components/Game/GameStatus";
 import GameOverModal from "../components/Game/GameOverModal";
+import TimelinePanel from "../components/Timeline/TimelinePanel";
 
 export default function GamePage() {
   const {
@@ -20,12 +21,30 @@ export default function GamePage() {
     loadMoves,
     applyMove,
     setGameOver,
+    setTimelineData,
+    selectTimelineNode,
+    activeTimelineId,
+    activeTimelineLatestNodeId,
+    selectedTimelineNodeId,
+    nodesById,
+    timelines,
+    setActiveTimelineId,
   } = useGameStore();
 
   const { token, userId, username } = useAuthStore();
   const [resigning, setResigning] = useState(false);
   const [opponentName, setOpponentName] = useState("Opponent");
   const connectedRef = useRef(false);
+
+  const refreshTimeline = useCallback(async () => {
+    if (!token || !activeGameId) return;
+    try {
+      const data = await api.getGameTimeline(token, activeGameId);
+      setTimelineData(data.timelines, data.active_timeline_id ?? null);
+    } catch {
+      // Timeline data is optional for basic play; ignore errors for now.
+    }
+  }, [token, activeGameId, setTimelineData]);
 
   // Connect WebSocket and load existing moves on mount
   useEffect(() => {
@@ -50,6 +69,8 @@ export default function GamePage() {
       );
     });
 
+    refreshTimeline();
+
     // Subscribe to WebSocket messages
     const unsub = wsClient.onMessage((msg: WSMessage) => {
       switch (msg.type) {
@@ -68,6 +89,24 @@ export default function GamePage() {
             const promotion = p.uci[4] as "q" | "r" | "b" | "n" | undefined;
             applyMove({ from, to, promotion } as Parameters<typeof applyMove>[0], p.fen);
           }
+          refreshTimeline();
+          break;
+        }
+        case "timeline_created": {
+          const p = msg.payload as { timeline_id: string };
+          if (p?.timeline_id) {
+            setActiveTimelineId(p.timeline_id);
+            wsClient.switchTimeline(p.timeline_id);
+          }
+          refreshTimeline();
+          break;
+        }
+        case "timeline_switched": {
+          const p = msg.payload as { timeline_id: string };
+          if (p?.timeline_id) {
+            setActiveTimelineId(p.timeline_id);
+          }
+          refreshTimeline();
           break;
         }
         case "game_over": {
@@ -88,7 +127,7 @@ export default function GamePage() {
       wsClient.disconnect();
       connectedRef.current = false;
     };
-  }, [activeGameId, token, userId, loadMoves, applyMove, setGameOver]);
+  }, [activeGameId, token, userId, loadMoves, applyMove, setGameOver, refreshTimeline]);
 
   // Resolve opponent display name (handles bots like "Bot-800")
   useEffect(() => {
@@ -132,6 +171,17 @@ export default function GamePage() {
   function handleLobby() {
     wsClient.disconnect();
     leaveGame();
+  }
+
+  function handleSwitchTimeline(timelineId: string) {
+    if (!timelineId) return;
+    setActiveTimelineId(timelineId);
+    wsClient.switchTimeline(timelineId);
+  }
+
+  function handleRewind(nodeId: string) {
+    if (!nodeId) return;
+    wsClient.sendRewind(nodeId);
   }
 
   // Build display names
@@ -209,6 +259,20 @@ export default function GamePage() {
       {status === "completed" && (
         <GameOverModal onRematch={handleLobby} onLobby={handleLobby} />
       )}
+
+      {/* Timeline panel */}
+      <div className="w-full max-w-5xl">
+        <TimelinePanel
+          timelines={timelines}
+          activeTimelineId={activeTimelineId}
+          activeTimelineLatestNodeId={activeTimelineLatestNodeId}
+          selectedNodeId={selectedTimelineNodeId}
+          nodesById={nodesById}
+          onSelectNode={selectTimelineNode}
+          onRewind={handleRewind}
+          onSwitchTimeline={handleSwitchTimeline}
+        />
+      </div>
     </div>
   );
 }

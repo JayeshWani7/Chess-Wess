@@ -124,8 +124,8 @@ func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, 
 // LinkNodeChild records a parent-child relationship between two nodes.
 func LinkNodeChild(ctx context.Context, pool *pgxpool.Pool, parentNodeID, childNodeID string) error {
 	_, err := pool.Exec(ctx,
-		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)`
-		+ ` ON CONFLICT DO NOTHING`,
+		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)` +
+			` ON CONFLICT DO NOTHING`,
 		parentNodeID, childNodeID,
 	)
 	if err != nil {

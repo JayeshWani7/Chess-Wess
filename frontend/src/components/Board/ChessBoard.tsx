@@ -27,7 +27,16 @@ interface PendingPromotion {
 }
 
 export default function ChessBoard() {
-  const { chess, selectedSquare, legalMoves, playerColor, moves, status } =
+  const {
+    chess,
+    selectedSquare,
+    legalMoves,
+    playerColor,
+    moves,
+    status,
+    activeTimelineId,
+    activeTimelineLatestNodeId,
+  } =
     useGameStore();
   const selectSquare = useGameStore((s) => s.selectSquare);
   const applyMove = useGameStore((s) => s.applyMove);
@@ -58,11 +67,13 @@ export default function ChessBoard() {
       wsClient.sendMove(
         move.from + move.to + (move.promotion ?? ""),
         move.san,
-        fen
+        fen,
+        activeTimelineId,
+        activeTimelineLatestNodeId
       );
       selectSquare(null);
     },
-    [chess, applyMove, selectSquare]
+    [chess, applyMove, selectSquare, activeTimelineId, activeTimelineLatestNodeId]
   );
 
   const handleSquareClick = useCallback(

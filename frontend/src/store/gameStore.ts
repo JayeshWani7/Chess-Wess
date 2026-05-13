@@ -24,6 +24,37 @@ export interface GameInfo {
   time_control: number;
   winner_id?: string | null;
   result?: string | null;
+  active_timeline_id?: string | null;
+}
+
+export interface TimelineMove {
+  uci: string;
+  san: string;
+  promotion?: string | null;
+}
+
+export interface TimelineNode {
+  id: string;
+  game_id: string;
+  timeline_id: string;
+  parent_node_id: string | null;
+  move?: TimelineMove | null;
+  board_state: string;
+  turn_number: number;
+  created_by_user: string;
+  created_at: string;
+  metadata?: {
+    check: boolean;
+    checkmate: boolean;
+    stalemate: boolean;
+    evaluation?: number | null;
+    captured?: string | null;
+  };
+}
+
+export interface TimelineData {
+  timeline_id: string;
+  nodes: TimelineNode[];
 }
 
 interface GameState {
@@ -45,14 +76,44 @@ interface GameState {
   result: GameResult;
   winnerId: string | null;
 
+  // Timeline state
+  timelines: TimelineData[];
+  nodesById: Record<string, TimelineNode>;
+  nodesByTimeline: Record<string, TimelineNode[]>;
+  activeTimelineId: string | null;
+  activeTimelineLatestNodeId: string | null;
+  selectedTimelineNodeId: string | null;
+
   // Actions
   setActiveGame: (gameId: string, info: GameInfo, color: "w" | "b") => void;
   loadMoves: (moves: GameMove[]) => void;
   applyMove: (move: Move, fen: string) => void;
+  setTimelineData: (timelines: TimelineData[], activeTimelineId: string | null) => void;
+  setActiveTimelineId: (timelineId: string | null) => void;
+  selectTimelineNode: (nodeId: string | null) => void;
+  syncActiveTimelineBoard: () => void;
   selectSquare: (square: string | null) => void;
   setTimers: (white: number, black: number) => void;
   setGameOver: (result: GameResult, winnerId: string | null) => void;
   leaveGame: () => void;
+}
+
+function buildMovesFromTimeline(nodes: TimelineNode[]): GameMove[] {
+  const moves: GameMove[] = [];
+  for (const node of nodes) {
+    if (!node.move) continue;
+    moves.push({
+      id: node.id,
+      gameId: node.game_id,
+      playerId: node.created_by_user,
+      moveNumber: node.turn_number,
+      moveSan: node.move.san,
+      moveUci: node.move.uci,
+      fenAfter: node.board_state,
+      createdAt: node.created_at,
+    });
+  }
+  return moves;
 }
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -68,6 +129,12 @@ export const useGameStore = create<GameState>()((set, get) => ({
   status: "pending",
   result: null,
   winnerId: null,
+  timelines: [],
+  nodesById: {},
+  nodesByTimeline: {},
+  activeTimelineId: null,
+  activeTimelineLatestNodeId: null,
+  selectedTimelineNodeId: null,
 
   setActiveGame: (gameId, info, color) => {
     const chess = new Chess();
@@ -84,6 +151,12 @@ export const useGameStore = create<GameState>()((set, get) => ({
       status: info.status,
       result: null,
       winnerId: null,
+      timelines: [],
+      nodesById: {},
+      nodesByTimeline: {},
+      activeTimelineId: info.active_timeline_id ?? null,
+      activeTimelineLatestNodeId: null,
+      selectedTimelineNodeId: null,
     });
   },
 
@@ -117,6 +190,82 @@ export const useGameStore = create<GameState>()((set, get) => ({
     };
 
     set((s) => ({ chess: newChess, moves: [...s.moves, newMove] }));
+  },
+
+  setTimelineData: (timelines, activeTimelineId) => {
+    const nodesById: Record<string, TimelineNode> = {};
+    const nodesByTimeline: Record<string, TimelineNode[]> = {};
+
+    for (const timeline of timelines) {
+      const sorted = [...timeline.nodes].sort((a, b) => a.turn_number - b.turn_number);
+      nodesByTimeline[timeline.timeline_id] = sorted;
+      for (const node of sorted) {
+        nodesById[node.id] = node;
+      }
+    }
+
+    let resolvedActiveTimelineId = activeTimelineId ?? null;
+    if (!resolvedActiveTimelineId && timelines.length > 0) {
+      resolvedActiveTimelineId = timelines[0].timeline_id;
+    }
+
+    let latestNodeId: string | null = null;
+    if (resolvedActiveTimelineId && nodesByTimeline[resolvedActiveTimelineId]?.length) {
+      const list = nodesByTimeline[resolvedActiveTimelineId];
+      latestNodeId = list[list.length - 1].id;
+    }
+
+    const moves = resolvedActiveTimelineId
+      ? buildMovesFromTimeline(nodesByTimeline[resolvedActiveTimelineId] ?? [])
+      : [];
+
+    const latestFen = resolvedActiveTimelineId && nodesByTimeline[resolvedActiveTimelineId]?.length
+      ? nodesByTimeline[resolvedActiveTimelineId][nodesByTimeline[resolvedActiveTimelineId].length - 1].board_state
+      : null;
+
+    set({
+      timelines,
+      nodesById,
+      nodesByTimeline,
+      activeTimelineId: resolvedActiveTimelineId,
+      activeTimelineLatestNodeId: latestNodeId,
+      moves,
+      chess: latestFen ? new Chess(latestFen) : get().chess,
+    });
+  },
+
+  setActiveTimelineId: (timelineId) => {
+    const { nodesByTimeline } = get();
+    if (!timelineId) {
+      set({ activeTimelineId: null, activeTimelineLatestNodeId: null });
+      return;
+    }
+
+    const list = nodesByTimeline[timelineId] ?? [];
+    const latestNode = list.length ? list[list.length - 1] : null;
+    const moves = buildMovesFromTimeline(list);
+
+    set({
+      activeTimelineId: timelineId,
+      activeTimelineLatestNodeId: latestNode ? latestNode.id : null,
+      moves,
+      chess: latestNode ? new Chess(latestNode.board_state) : get().chess,
+    });
+  },
+
+  selectTimelineNode: (nodeId) => set({ selectedTimelineNodeId: nodeId }),
+
+  syncActiveTimelineBoard: () => {
+    const { activeTimelineId, nodesByTimeline } = get();
+    if (!activeTimelineId) return;
+    const list = nodesByTimeline[activeTimelineId] ?? [];
+    if (!list.length) return;
+    const latestNode = list[list.length - 1];
+    set({
+      activeTimelineLatestNodeId: latestNode.id,
+      moves: buildMovesFromTimeline(list),
+      chess: new Chess(latestNode.board_state),
+    });
   },
 
   selectSquare: (square) => {
@@ -171,5 +320,11 @@ export const useGameStore = create<GameState>()((set, get) => ({
       status: "pending",
       result: null,
       winnerId: null,
+      timelines: [],
+      nodesById: {},
+      nodesByTimeline: {},
+      activeTimelineId: null,
+      activeTimelineLatestNodeId: null,
+      selectedTimelineNodeId: null,
     }),
 }));

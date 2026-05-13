@@ -32,6 +32,7 @@ export interface GameInfo {
   black_player_id: string | null;
   status: string;
   time_control: number;
+  active_timeline_id?: string | null;
   winner_id?: string | null;
   result?: string | null;
   created_at?: string;
@@ -52,6 +53,36 @@ export interface GameMove {
   move_uci: string;
   fen_after: string;
   created_at: string;
+}
+
+export interface TimelineNode {
+  id: string;
+  game_id: string;
+  timeline_id: string;
+  parent_node_id: string | null;
+  move?: { uci: string; san: string; promotion?: string | null } | null;
+  board_state: string;
+  turn_number: number;
+  created_by_user: string;
+  created_at: string;
+  metadata?: {
+    check: boolean;
+    checkmate: boolean;
+    stalemate: boolean;
+    evaluation?: number | null;
+    captured?: string | null;
+  };
+}
+
+export interface TimelineData {
+  timeline_id: string;
+  nodes: TimelineNode[];
+}
+
+export interface GameTimelineResponse {
+  game_id: string;
+  active_timeline_id: string | null;
+  timelines: TimelineData[];
 }
 
 export interface BotInfo {
@@ -102,6 +133,23 @@ export const api = {
 
   getGameMoves: (token: string, gameId: string) =>
     request<GameMove[]>(`/api/games/${gameId}/moves`, {}, token),
+
+  getGameTimeline: (token: string, gameId: string) =>
+    request<GameTimelineResponse>(`/api/games/${gameId}/timeline`, {}, token),
+
+  getActiveTimeline: (token: string, gameId: string) =>
+    request<{ game_id: string; active_timeline_id: string | null }>(
+      `/api/games/${gameId}/timeline/active`,
+      {},
+      token
+    ),
+
+  setActiveTimeline: (token: string, gameId: string, timelineId: string) =>
+    request<{ game_id: string; active_timeline_id: string }>(
+      `/api/games/${gameId}/timeline/active`,
+      { method: "POST", body: JSON.stringify({ timeline_id: timelineId }) },
+      token
+    ),
 
   resignGame: (token: string, gameId: string) =>
     request<{ status: string }>(

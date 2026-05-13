@@ -1,5 +1,9 @@
 export type WSMessageType =
   | "move"
+  | "rewind"
+  | "timeline_created"
+  | "timeline_switched"
+  | "switch_timeline"
   | "player_joined"
   | "player_connected"
   | "player_disconnected"
@@ -68,8 +72,19 @@ class ChessWSClient {
     }
   }
 
-  sendMove(uci: string, san: string, fen: string) {
-    this.send({ type: "move", payload: { uci, san, fen } });
+  sendMove(uci: string, san: string, fen: string, timelineId?: string | null, parentNodeId?: string | null) {
+    this.send({
+      type: "move",
+      payload: { uci, san, fen, timeline_id: timelineId ?? undefined, parent_node_id: parentNodeId ?? undefined },
+    });
+  }
+
+  sendRewind(nodeId: string) {
+    this.send({ type: "rewind", payload: { node_id: nodeId } });
+  }
+
+  switchTimeline(timelineId: string) {
+    this.send({ type: "switch_timeline", payload: { timeline_id: timelineId } });
   }
 
   onMessage(handler: MessageHandler) {
