@@ -76,7 +76,10 @@ export interface TimelineNode {
 
 export interface TimelineData {
   timeline_id: string;
+  timeline_name?: string | null;
   nodes: TimelineNode[];
+  node_count?: number;
+  nodes_partial?: boolean;
 }
 
 export interface GameTimelineResponse {
@@ -134,8 +137,10 @@ export const api = {
   getGameMoves: (token: string, gameId: string) =>
     request<GameMove[]>(`/api/games/${gameId}/moves`, {}, token),
 
-  getGameTimeline: (token: string, gameId: string) =>
-    request<GameTimelineResponse>(`/api/games/${gameId}/timeline`, {}, token),
+  getGameTimeline: (token: string, gameId: string, nodeLimit?: number | null) => {
+    const query = nodeLimit && nodeLimit > 0 ? `?node_limit=${nodeLimit}` : "";
+    return request<GameTimelineResponse>(`/api/games/${gameId}/timeline${query}`, {}, token);
+  },
 
   getActiveTimeline: (token: string, gameId: string) =>
     request<{ game_id: string; active_timeline_id: string | null }>(
@@ -148,6 +153,16 @@ export const api = {
     request<{ game_id: string; active_timeline_id: string }>(
       `/api/games/${gameId}/timeline/active`,
       { method: "POST", body: JSON.stringify({ timeline_id: timelineId }) },
+      token
+    ),
+
+  renameTimeline: (token: string, gameId: string, timelineId: string, timelineName: string) =>
+    request<{ game_id: string; timeline_id: string; timeline_name: string }>(
+      `/api/games/${gameId}/timeline`,
+      {
+        method: "POST",
+        body: JSON.stringify({ timeline_id: timelineId, timeline_name: timelineName }),
+      },
       token
     ),
 

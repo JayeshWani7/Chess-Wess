@@ -8,6 +8,7 @@ type Timeline struct {
 	ID            string    `json:"id"`
 	GameID        string    `json:"game_id"`
 	RootNodeID    string    `json:"root_node_id"`
+	TimelineName  string    `json:"timeline_name"`
 	CreatedAt     time.Time `json:"created_at"`
 	CreatedByUser string    `json:"created_by_user"` // User ID who created this timeline (via rewind in Phase 3)
 }

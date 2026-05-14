@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import type { TimelineData, TimelineNode } from "../../store/gameStore";
 import TimelineGraph from "./TimelineGraph";
 
@@ -10,6 +11,10 @@ interface TimelinePanelProps {
   onSelectNode: (nodeId: string) => void;
   onRewind: (nodeId: string) => void;
   onSwitchTimeline: (timelineId: string) => void;
+  onRenameTimeline: (timelineId: string, name: string) => void;
+  onLoadMoreGraph: () => void;
+  onLoadFullGraph: () => void;
+  nodeLimit: number | null;
 }
 
 function shortId(id: string) {
@@ -25,11 +30,25 @@ export default function TimelinePanel({
   onSelectNode,
   onRewind,
   onSwitchTimeline,
+  onRenameTimeline,
+  onLoadMoreGraph,
+  onLoadFullGraph,
+  nodeLimit,
 }: TimelinePanelProps) {
+  const activeTimeline = useMemo(
+    () => timelines.find((t) => t.timeline_id === activeTimelineId) ?? null,
+    [timelines, activeTimelineId]
+  );
   const selectedNode = selectedNodeId ? nodesById[selectedNodeId] : null;
   const activeNode = activeTimelineLatestNodeId
     ? nodesById[activeTimelineLatestNodeId]
     : null;
+
+  const [nameDraft, setNameDraft] = useState("");
+  useEffect(() => {
+    const fallback = activeTimelineId ? `Timeline ${shortId(activeTimelineId)}` : "";
+    setNameDraft(activeTimeline?.timeline_name ?? fallback);
+  }, [activeTimeline?.timeline_name, activeTimelineId]);
 
   const rewindTargetId = selectedNodeId ?? activeTimelineLatestNodeId;
 
@@ -40,7 +59,7 @@ export default function TimelinePanel({
           <div>
             <h3 className="text-sm font-semibold text-gray-300">Timeline Graph</h3>
             <p className="text-xs text-gray-500">
-              Active timeline: {activeTimelineId ? shortId(activeTimelineId) : "none"}
+              Active timeline: {activeTimeline?.timeline_name ?? (activeTimelineId ? shortId(activeTimelineId) : "none")}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -53,7 +72,7 @@ export default function TimelinePanel({
               {timelines.length === 0 && <option value="">No timelines</option>}
               {timelines.map((t) => (
                 <option key={t.timeline_id} value={t.timeline_id}>
-                  Timeline {shortId(t.timeline_id)}
+                  {t.timeline_name ?? `Timeline ${shortId(t.timeline_id)}`}
                 </option>
               ))}
             </select>
@@ -65,6 +84,43 @@ export default function TimelinePanel({
               Rewind & Branch
             </button>
           </div>
+        </div>
+
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-2">
+            <input
+              className="input text-xs max-w-[220px]"
+              placeholder="Name this timeline"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              disabled={!activeTimelineId}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && activeTimelineId) {
+                  onRenameTimeline(activeTimelineId, nameDraft);
+                }
+              }}
+            />
+            <button
+              className="btn-ghost text-xs"
+              disabled={!activeTimelineId || !nameDraft.trim()}
+              onClick={() => activeTimelineId && onRenameTimeline(activeTimelineId, nameDraft)}
+            >
+              Save Name
+            </button>
+          </div>
+          {activeTimeline?.nodes_partial && (
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span>
+                Showing last {nodeLimit ?? 0} of {activeTimeline.node_count ?? "?"} nodes
+              </span>
+              <button className="btn-ghost text-xs" onClick={onLoadMoreGraph}>
+                Load more
+              </button>
+              <button className="btn-ghost text-xs" onClick={onLoadFullGraph}>
+                Load full
+              </button>
+            </div>
+          )}
         </div>
 
         <TimelineGraph

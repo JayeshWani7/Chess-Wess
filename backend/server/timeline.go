@@ -3,9 +3,11 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/ChessWess/backend/db"
+	"github.com/ChessWess/backend/models"
 )
 
 // handleGameTimeline handles GET /api/games/{id}/timeline — returns the game's timeline tree.
@@ -23,6 +25,41 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 
 	if action == "active" {
 		s.handleActiveTimeline(w, r, gameID)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var payload struct {
+			TimelineID   string `json:"timeline_id"`
+			TimelineName string `json:"timeline_name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+			return
+		}
+		payload.TimelineName = strings.TrimSpace(payload.TimelineName)
+		if payload.TimelineID == "" || payload.TimelineName == "" {
+			http.Error(w, `{"error":"timeline_id and timeline_name required"}`, http.StatusBadRequest)
+			return
+		}
+		if err := db.UpdateTimelineName(r.Context(), s.db, gameID, payload.TimelineID, payload.TimelineName); err != nil {
+			http.Error(w, `{"error":"timeline not found"}`, http.StatusNotFound)
+			return
+		}
+		s.hub.Broadcast(gameID, WSMessage{
+			Type: "timeline_renamed",
+			Payload: map[string]string{
+				"timeline_id":   payload.TimelineID,
+				"timeline_name": payload.TimelineName,
+			},
+		})
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"game_id":       gameID,
+			"timeline_id":   payload.TimelineID,
+			"timeline_name": payload.TimelineName,
+		})
 		return
 	}
 
@@ -44,22 +81,53 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For each timeline, get all nodes
+	// For each timeline, get nodes (optionally windowed)
+	var nodeLimit int
+	if rawLimit := r.URL.Query().Get("node_limit"); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed < 0 {
+			http.Error(w, `{"error":"invalid node_limit"}`, http.StatusBadRequest)
+			return
+		}
+		if parsed > 2000 {
+			parsed = 2000
+		}
+		nodeLimit = parsed
+	}
+
 	type TimelineData struct {
-		Timeline string      `json:"timeline_id"`
-		Nodes    interface{} `json:"nodes"`
+		Timeline     string            `json:"timeline_id"`
+		TimelineName string            `json:"timeline_name"`
+		Nodes        []models.GameNode `json:"nodes"`
+		NodeCount    int               `json:"node_count"`
+		NodesPartial bool              `json:"nodes_partial"`
 	}
 
 	result := make([]TimelineData, len(timelines))
 	for i, timeline := range timelines {
-		nodes, err := db.GetTimelineNodes(r.Context(), s.db, timeline.ID)
+		nodeCount, err := db.GetTimelineNodeCount(r.Context(), s.db, timeline.ID)
 		if err != nil {
 			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 			return
 		}
+
+		var nodes []models.GameNode
+		if nodeLimit > 0 {
+			nodes, err = db.GetTimelineNodesWindow(r.Context(), s.db, timeline.ID, nodeLimit)
+		} else {
+			nodes, err = db.GetTimelineNodes(r.Context(), s.db, timeline.ID)
+		}
+		if err != nil {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+			return
+		}
+
 		result[i] = TimelineData{
-			Timeline: timeline.ID,
-			Nodes:    nodes,
+			Timeline:     timeline.ID,
+			TimelineName: timeline.TimelineName,
+			Nodes:        nodes,
+			NodeCount:    nodeCount,
+			NodesPartial: nodeLimit > 0 && nodeCount > len(nodes),
 		}
 	}
 

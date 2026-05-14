@@ -2,6 +2,7 @@ export type WSMessageType =
   | "move"
   | "rewind"
   | "timeline_created"
+  | "timeline_renamed"
   | "timeline_switched"
   | "switch_timeline"
   | "player_joined"

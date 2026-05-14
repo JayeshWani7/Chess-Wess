@@ -286,7 +286,8 @@ func (s *Server) handleRewindMessage(c *Client, msg WSMessage) {
 		return
 	}
 
-	timelineID, err := db.CreateTimeline(ctx, s.db, c.gameID, c.userID)
+	branchName := fmt.Sprintf("Branch T%d", fromNode.TurnNumber)
+	timelineID, err := db.CreateTimeline(ctx, s.db, c.gameID, c.userID, branchName)
 	if err != nil {
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to create timeline"})
 		return

@@ -54,7 +54,10 @@ export interface TimelineNode {
 
 export interface TimelineData {
   timeline_id: string;
+  timeline_name?: string | null;
   nodes: TimelineNode[];
+  node_count?: number;
+  nodes_partial?: boolean;
 }
 
 interface GameState {

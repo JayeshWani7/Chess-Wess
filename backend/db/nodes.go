@@ -10,13 +10,30 @@ import (
 
 // CreateTimeline creates a new timeline for a game.
 // The root_node_id is initially NULL and will be set after the root node is created.
-func CreateTimeline(ctx context.Context, pool *pgxpool.Pool, gameID, createdByUser string) (string, error) {
+func CreateTimeline(ctx context.Context, pool *pgxpool.Pool, gameID, createdByUser, timelineName string) (string, error) {
 	var timelineID string
+	var name string
+	if timelineName != "" {
+		name = timelineName
+	} else {
+		var count int
+		err := pool.QueryRow(ctx,
+			`SELECT COUNT(*) FROM timelines WHERE game_id = $1`,
+			gameID,
+		).Scan(&count)
+		if err != nil {
+			return "", fmt.Errorf("CreateTimeline count: %w", err)
+		}
+		name = fmt.Sprintf("Timeline %d", count+1)
+	}
+	if len(name) > 64 {
+		name = name[:64]
+	}
 	err := pool.QueryRow(ctx,
-		`INSERT INTO timelines (game_id, created_by_user) 
-		 VALUES ($1, $2) 
+		`INSERT INTO timelines (game_id, created_by_user, timeline_name) 
+		 VALUES ($1, $2, $3) 
 		 RETURNING id`,
-		gameID, createdByUser,
+		gameID, createdByUser, name,
 	).Scan(&timelineID)
 	if err != nil {
 		return "", fmt.Errorf("CreateTimeline: %w", err)
@@ -124,7 +141,7 @@ func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, 
 // LinkNodeChild records a parent-child relationship between two nodes.
 func LinkNodeChild(ctx context.Context, pool *pgxpool.Pool, parentNodeID, childNodeID string) error {
 	_, err := pool.Exec(ctx,
-		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)` +
+		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)`+
 			` ON CONFLICT DO NOTHING`,
 		parentNodeID, childNodeID,
 	)
@@ -332,6 +349,75 @@ func GetTimelineNodes(ctx context.Context, pool *pgxpool.Pool, timelineID string
 	return nodes, nil
 }
 
+// GetTimelineNodeCount returns the total node count for a timeline.
+func GetTimelineNodeCount(ctx context.Context, pool *pgxpool.Pool, timelineID string) (int, error) {
+	var count int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM game_nodes WHERE timeline_id = $1`,
+		timelineID,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("GetTimelineNodeCount: %w", err)
+	}
+	return count, nil
+}
+
+// GetTimelineNodesWindow returns the root node plus the most recent nodes for a timeline.
+// This keeps graph rendering small while preserving the branch origin.
+func GetTimelineNodesWindow(ctx context.Context, pool *pgxpool.Pool, timelineID string, nodeLimit int) ([]models.GameNode, error) {
+	rows, err := pool.Query(ctx,
+		`WITH max_turn AS (
+		   SELECT COALESCE(MAX(turn_number), 0) AS max_turn
+		   FROM game_nodes
+		   WHERE timeline_id = $1
+		 )
+		 SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
+		        board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate,
+		        evaluation, captured_piece, created_at
+		 FROM game_nodes, max_turn
+		 WHERE timeline_id = $1
+		   AND (turn_number = 0 OR turn_number >= GREATEST(max_turn - $2 + 1, 0))
+		 ORDER BY turn_number ASC`,
+		timelineID, nodeLimit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetTimelineNodesWindow: %w", err)
+	}
+	defer rows.Close()
+
+	var nodes []models.GameNode
+	for rows.Next() {
+		var node models.GameNode
+		var moveUCI, moveSAN, promotion, capturedPiece *string
+
+		err := rows.Scan(
+			&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
+			&moveUCI, &moveSAN, &promotion,
+			&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
+			&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
+			&node.Metadata.Evaluation, &capturedPiece,
+			&node.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("GetTimelineNodesWindow scan: %w", err)
+		}
+
+		if moveUCI != nil && *moveUCI != "" {
+			node.Move = &models.Move{
+				UCI:       *moveUCI,
+				SAN:       *moveSAN,
+				Promotion: *promotion,
+			}
+		}
+		if capturedPiece != nil {
+			node.Metadata.Captured = *capturedPiece
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	return nodes, nil
+}
+
 // GetLatestTimelineNode retrieves the most recent node in a timeline.
 func GetLatestTimelineNode(ctx context.Context, pool *pgxpool.Pool, timelineID string) (*models.GameNode, error) {
 	rows, err := pool.Query(ctx,
@@ -384,7 +470,7 @@ func GetLatestTimelineNode(ctx context.Context, pool *pgxpool.Pool, timelineID s
 // GetGameTimelines retrieves all timelines for a game.
 func GetGameTimelines(ctx context.Context, pool *pgxpool.Pool, gameID string) ([]models.Timeline, error) {
 	rows, err := pool.Query(ctx,
-		`SELECT id, game_id, root_node_id, created_at, created_by_user
+		`SELECT id, game_id, root_node_id, timeline_name, created_at, created_by_user
 		 FROM timelines
 		 WHERE game_id = $1
 		 ORDER BY created_at ASC`,
@@ -399,7 +485,7 @@ func GetGameTimelines(ctx context.Context, pool *pgxpool.Pool, gameID string) ([
 	for rows.Next() {
 		var timeline models.Timeline
 		err := rows.Scan(&timeline.ID, &timeline.GameID, &timeline.RootNodeID,
-			&timeline.CreatedAt, &timeline.CreatedByUser)
+			&timeline.TimelineName, &timeline.CreatedAt, &timeline.CreatedByUser)
 		if err != nil {
 			return nil, fmt.Errorf("GetGameTimelines scan: %w", err)
 		}
@@ -407,4 +493,24 @@ func GetGameTimelines(ctx context.Context, pool *pgxpool.Pool, gameID string) ([
 	}
 
 	return timelines, nil
+}
+
+// UpdateTimelineName sets the display name for a timeline if it belongs to the game.
+func UpdateTimelineName(ctx context.Context, pool *pgxpool.Pool, gameID, timelineID, timelineName string) error {
+	if len(timelineName) > 64 {
+		timelineName = timelineName[:64]
+	}
+	res, err := pool.Exec(ctx,
+		`UPDATE timelines
+		 SET timeline_name = $1
+		 WHERE id = $2 AND game_id = $3`,
+		timelineName, timelineID, gameID,
+	)
+	if err != nil {
+		return fmt.Errorf("UpdateTimelineName: %w", err)
+	}
+	if res.RowsAffected() == 0 {
+		return fmt.Errorf("UpdateTimelineName: timeline not found")
+	}
+	return nil
 }

@@ -87,7 +87,7 @@ func (s *Server) createGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Phase 2: Create initial timeline and root node
-	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID)
+	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID, "Mainline")
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"failed to create timeline: %v"}`, err), http.StatusInternalServerError)
 		return
@@ -314,7 +314,7 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Phase 2: Create initial timeline and root node
-	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID)
+	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID, "Mainline")
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"failed to create timeline: %v"}`, err), http.StatusInternalServerError)
 		return

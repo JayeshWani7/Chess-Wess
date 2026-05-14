@@ -34,12 +34,19 @@ export default function GamePage() {
   const { token, userId, username } = useAuthStore();
   const [resigning, setResigning] = useState(false);
   const [opponentName, setOpponentName] = useState("Opponent");
+  const [timelineNodeLimit, setTimelineNodeLimit] = useState<number | null>(200);
+  const timelineLimitRef = useRef<number | null>(200);
   const connectedRef = useRef(false);
+
+  useEffect(() => {
+    timelineLimitRef.current = timelineNodeLimit;
+  }, [timelineNodeLimit]);
 
   const refreshTimeline = useCallback(async () => {
     if (!token || !activeGameId) return;
     try {
-      const data = await api.getGameTimeline(token, activeGameId);
+      const limit = timelineLimitRef.current ?? undefined;
+      const data = await api.getGameTimeline(token, activeGameId, limit);
       setTimelineData(data.timelines, data.active_timeline_id ?? null);
     } catch {
       // Timeline data is optional for basic play; ignore errors for now.
@@ -101,6 +108,10 @@ export default function GamePage() {
           refreshTimeline();
           break;
         }
+        case "timeline_renamed": {
+          refreshTimeline();
+          break;
+        }
         case "timeline_switched": {
           const p = msg.payload as { timeline_id: string };
           if (p?.timeline_id) {
@@ -156,6 +167,10 @@ export default function GamePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chess]); // chess is a new ref after every move — that's the trigger
 
+  useEffect(() => {
+    refreshTimeline();
+  }, [refreshTimeline]);
+
   async function handleResign() {
     if (!token || !activeGameId || resigning) return;
     setResigning(true);
@@ -182,6 +197,29 @@ export default function GamePage() {
   function handleRewind(nodeId: string) {
     if (!nodeId) return;
     wsClient.sendRewind(nodeId);
+  }
+
+  async function handleRenameTimeline(timelineId: string, name: string) {
+    if (!token || !activeGameId) return;
+    const trimmed = name.trim();
+    if (!timelineId || !trimmed) return;
+    try {
+      await api.renameTimeline(token, activeGameId, timelineId, trimmed);
+      refreshTimeline();
+    } catch {
+      // Ignore rename failures for now.
+    }
+  }
+
+  function handleLoadMoreGraph() {
+    setTimelineNodeLimit((prev) => {
+      if (prev == null) return null;
+      return prev + 200;
+    });
+  }
+
+  function handleLoadFullGraph() {
+    setTimelineNodeLimit(null);
   }
 
   // Build display names
@@ -271,6 +309,10 @@ export default function GamePage() {
           onSelectNode={selectTimelineNode}
           onRewind={handleRewind}
           onSwitchTimeline={handleSwitchTimeline}
+          onRenameTimeline={handleRenameTimeline}
+          onLoadMoreGraph={handleLoadMoreGraph}
+          onLoadFullGraph={handleLoadFullGraph}
+          nodeLimit={timelineNodeLimit}
         />
       </div>
     </div>
