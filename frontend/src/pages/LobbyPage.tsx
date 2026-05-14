@@ -63,12 +63,12 @@ export default function LobbyPage() {
   }, [fetchGames]);
 
   async function handleCreate() {
-    if (!token) return;
+    if (!token || !userId) return;
     setCreating(true);
     setError(null);
     try {
       const game = await api.createGame(token, timeControl, color);
-      const playerColor = color === "white" ? "w" : "b";
+      const playerColor = game.black_player_id === userId ? "b" : "w";
       setActiveGame(game.id, game as Parameters<typeof setActiveGame>[1], playerColor);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create game");
@@ -94,12 +94,12 @@ export default function LobbyPage() {
   }
 
   async function handlePlayBot() {
-    if (!token) return;
+    if (!token || !userId) return;
     setCreatingBot(true);
     setError(null);
     try {
       const game = await api.createBotGame(token, botTimeControl, botRating, botColor);
-      const playerColor = botColor === "white" ? "w" : "b";
+      const playerColor = game.black_player_id === userId ? "b" : "w";
       setActiveGame(game.id, game as Parameters<typeof setActiveGame>[1], playerColor);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start bot game");
@@ -411,7 +411,8 @@ export default function LobbyPage() {
                   checkmate: "Checkmate", stalemate: "Stalemate",
                   resign: "Resignation", timeout: "Timeout", draw: "Draw",
                 };
-                const date = new Date(g.updated_at ?? g.created_at).toLocaleDateString();
+                const dateSource = g.updated_at ?? g.created_at;
+                const date = dateSource ? new Date(dateSource).toLocaleDateString() : "Unknown date";
 
                 return (
                   <div

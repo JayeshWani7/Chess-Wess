@@ -29,6 +29,7 @@ export default function GamePage() {
     nodesById,
     timelines,
     setActiveTimelineId,
+    setPlayerColor,
   } = useGameStore();
 
   const { token, userId, username } = useAuthStore();
@@ -143,14 +144,16 @@ export default function GamePage() {
   // Resolve opponent display name (handles bots like "Bot-800")
   useEffect(() => {
     if (!gameInfo || !userId || !token) return;
+    const expectedColor = gameInfo.black_player_id === userId ? "b" : "w";
+    setPlayerColor(expectedColor);
     const opponentId =
-      playerColor === "w" ? gameInfo.black_player_id : gameInfo.white_player_id;
+      expectedColor === "w" ? gameInfo.black_player_id : gameInfo.white_player_id;
     if (!opponentId) return;
 
     api.getUser(token, opponentId)
       .then((u) => setOpponentName(u.username))
       .catch(() => setOpponentName("Opponent"));
-  }, [gameInfo, userId, playerColor, token]);
+  }, [gameInfo, userId, token, setPlayerColor]);
 
   // Detect checkmate / stalemate / draw locally after every move
   // (chess is a new instance after each applyMove, so this effect re-fires correctly)

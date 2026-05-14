@@ -158,6 +158,29 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 		return
 	}
 
+	if result, shouldEnd := outcomeFromFEN(fen); shouldEnd {
+		var winnerArg interface{}
+		winnerID := ""
+		if result == "checkmate" {
+			winnerID = c.userID
+			winnerArg = c.userID
+		}
+		ct, err := s.db.Exec(ctx,
+			`UPDATE games
+			 SET status = 'completed', winner_id = $1, result = $2, updated_at = NOW()
+			 WHERE id = $3 AND status = 'active'`,
+			winnerArg, result, c.gameID,
+		)
+		if err != nil {
+			log.Printf("ws: failed to finalize game: %v", err)
+		} else if ct.RowsAffected() > 0 {
+			s.hub.Broadcast(c.gameID, WSMessage{
+				Type:    "game_over",
+				Payload: map[string]string{"winner_id": winnerID, "result": result},
+			})
+		}
+	}
+
 	// Broadcast the move to all players in the room
 	s.hub.Broadcast(c.gameID, WSMessage{
 		Type: "move",
@@ -169,6 +192,22 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 			"fen":       fen,
 		},
 	})
+}
+
+func outcomeFromFEN(fen string) (string, bool) {
+	fenOpt, err := chess.FEN(fen)
+	if err != nil {
+		return "", false
+	}
+	game := chess.NewGame(fenOpt)
+	status := game.Position().Status()
+	if status == chess.Checkmate {
+		return "checkmate", true
+	}
+	if status == chess.Stalemate {
+		return "stalemate", true
+	}
+	return "", false
 }
 
 // createGameNode creates a game node for the timeline system.

@@ -98,6 +98,7 @@ interface GameState {
   selectSquare: (square: string | null) => void;
   setTimers: (white: number, black: number) => void;
   setGameOver: (result: GameResult, winnerId: string | null) => void;
+  setPlayerColor: (color: "w" | "b" | null) => void;
   leaveGame: () => void;
 }
 
@@ -310,6 +311,8 @@ export const useGameStore = create<GameState>()((set, get) => ({
 
   setGameOver: (result, winnerId) =>
     set({ status: "completed", result, winnerId }),
+
+  setPlayerColor: (color) => set({ playerColor: color }),
 
   leaveGame: () =>
     set({

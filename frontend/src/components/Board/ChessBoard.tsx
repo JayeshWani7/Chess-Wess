@@ -32,6 +32,7 @@ export default function ChessBoard() {
     selectedSquare,
     legalMoves,
     playerColor,
+    gameInfo,
     moves,
     status,
     activeTimelineId,
@@ -40,12 +41,14 @@ export default function ChessBoard() {
     useGameStore();
   const selectSquare = useGameStore((s) => s.selectSquare);
   const applyMove = useGameStore((s) => s.applyMove);
-  const token = useAuthStore((s) => s.token);
+  const userId = useAuthStore((s) => s.userId);
 
   // Pending promotion: set when a pawn reaches the back rank
   const [pendingPromo, setPendingPromo] = useState<PendingPromotion | null>(null);
 
-  const flipped = playerColor === "b";
+  const flipped = gameInfo && userId
+    ? gameInfo.black_player_id === userId
+    : playerColor === "b";
   const { ranks, files } = buildBoardMatrix(flipped);
 
   // Last move squares for highlighting
@@ -102,7 +105,7 @@ export default function ChessBoard() {
 
       selectSquare(square);
     },
-    [chess, selectedSquare, legalMoves, playerColor, status, pendingPromo, commitMove, selectSquare, token]
+    [chess, selectedSquare, legalMoves, playerColor, status, pendingPromo, commitMove, selectSquare]
   );
 
   function handlePromoChoice(piece: "q" | "r" | "b" | "n") {
