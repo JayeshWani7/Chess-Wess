@@ -47,10 +47,34 @@ class ChessWSClient {
       this.startPing();
     };
 
-    this.ws.onmessage = (event) => {
+    this.ws.onmessage = async (event) => {
       try {
-        const msg: WSMessage = JSON.parse(event.data as string);
-        this.handlers.forEach((h) => h(msg));
+        if (typeof event.data === "string") {
+          const msg: WSMessage = JSON.parse(event.data);
+          this.handlers.forEach((h) => h(msg));
+          return;
+        }
+
+        if (event.data instanceof Blob) {
+          const text = await event.data.text();
+          const msg: WSMessage = JSON.parse(text);
+          this.handlers.forEach((h) => h(msg));
+          return;
+        }
+
+        if (event.data instanceof ArrayBuffer) {
+          const text = new TextDecoder().decode(event.data);
+          const msg: WSMessage = JSON.parse(text);
+          this.handlers.forEach((h) => h(msg));
+          return;
+        }
+
+        if (event.data && typeof event.data === "object") {
+          this.handlers.forEach((h) => h(event.data as WSMessage));
+          return;
+        }
+
+        console.warn("[WS] unknown message payload", event.data);
       } catch {
         console.warn("[WS] failed to parse message", event.data);
       }
