@@ -21,6 +21,60 @@ function shortId(id: string) {
   return id ? id.slice(0, 8) : "";
 }
 
+type MaterialBreakdown = {
+  white: number;
+  black: number;
+  diff: number;
+};
+
+type PieceCounts = {
+  white: Record<string, number>;
+  black: Record<string, number>;
+};
+
+function computeMaterial(fen: string): MaterialBreakdown {
+  const pieceValues: Record<string, number> = {
+    p: 1,
+    n: 3,
+    b: 3,
+    r: 5,
+    q: 9,
+    k: 0,
+  };
+  const board = fen.split(" ")[0] ?? "";
+  let white = 0;
+  let black = 0;
+
+  for (const char of board) {
+    if (char === "/") continue;
+    if (char >= "1" && char <= "8") continue;
+
+    const value = pieceValues[char.toLowerCase()] ?? 0;
+    if (char === char.toUpperCase()) white += value;
+    else black += value;
+  }
+
+  return { white, black, diff: white - black };
+}
+
+function computePieceCounts(fen: string): PieceCounts {
+  const board = fen.split(" ")[0] ?? "";
+  const emptyCounts = { p: 0, n: 0, b: 0, r: 0, q: 0, k: 0 };
+  const white = { ...emptyCounts };
+  const black = { ...emptyCounts };
+
+  for (const char of board) {
+    if (char === "/") continue;
+    if (char >= "1" && char <= "8") continue;
+
+    const key = char.toLowerCase() as keyof typeof emptyCounts;
+    if (char === char.toUpperCase()) white[key] += 1;
+    else black[key] += 1;
+  }
+
+  return { white, black };
+}
+
 export default function TimelinePanel({
   timelines,
   activeTimelineId,
@@ -43,6 +97,9 @@ export default function TimelinePanel({
   const activeNode = activeTimelineLatestNodeId
     ? nodesById[activeTimelineLatestNodeId]
     : null;
+  const statsNode = selectedNode ?? activeNode;
+  const material = statsNode ? computeMaterial(statsNode.board_state) : null;
+  const counts = statsNode ? computePieceCounts(statsNode.board_state) : null;
 
   const [nameDraft, setNameDraft] = useState("");
   useEffect(() => {
@@ -130,7 +187,7 @@ export default function TimelinePanel({
           onSelectNode={onSelectNode}
         />
 
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-chrono-border bg-chrono-bg/60 p-3">
             <p className="text-xs uppercase text-gray-500">Active Node</p>
             {activeNode ? (
@@ -156,6 +213,37 @@ export default function TimelinePanel({
               </div>
             ) : (
               <p className="mt-2 text-xs text-gray-500">Select a node to inspect</p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-chrono-border bg-chrono-bg/60 p-3">
+            <p className="text-xs uppercase text-gray-500">Timeline Stats</p>
+            {statsNode && material && counts ? (
+              <div className="mt-2 text-xs text-gray-300 space-y-1">
+                <p>
+                  Material: W {material.white} / B {material.black}
+                </p>
+                <p>
+                  Pieces W: P{counts.white.p} N{counts.white.n} B{counts.white.b} R{counts.white.r} Q{counts.white.q}
+                </p>
+                <p>
+                  Pieces B: P{counts.black.p} N{counts.black.n} B{counts.black.b} R{counts.black.r} Q{counts.black.q}
+                </p>
+                <p>
+                  Advantage: {material.diff === 0 ? "Even" : material.diff > 0 ? `+${material.diff}` : material.diff}
+                </p>
+                <p>
+                  Eval: {(typeof statsNode.metadata?.evaluation === "number"
+                    ? statsNode.metadata.evaluation
+                    : 0
+                  ).toFixed(2)}
+                </p>
+                <p className="text-gray-500">
+                  Based on {selectedNode ? "selected" : "active"} node
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-gray-500">No stats available</p>
             )}
           </div>
         </div>
