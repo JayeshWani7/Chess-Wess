@@ -18,12 +18,13 @@ export default function PieceIcon({ piece }: PieceIconProps) {
     <span
       className="text-4xl leading-none select-none"
       style={{
-        // White pieces get a dark outline so they're visible on light squares
+        // Pieces need contrast on both light and dark squares
+        WebkitTextStroke: piece.color === "w" ? "0.5px #333" : "1px #000",
         textShadow:
           piece.color === "w"
-            ? "0 0 2px #000, 0 0 2px #000"
-            : "0 0 2px #fff4, 0 0 1px #0008",
-        filter: piece.color === "w" ? "drop-shadow(0 1px 1px rgba(0,0,0,0.6))" : "none",
+            ? "0 1px 2px rgba(0,0,0,0.4)"
+            : "0 2px 4px rgba(0,0,0,0.6), inset 0 1px rgba(0,0,0,0.3)",
+        filter: piece.color === "w" ? "drop-shadow(0 1px 1px rgba(0,0,0,0.3))" : "drop-shadow(0 2px 2px rgba(0,0,0,0.5))",
       }}
       aria-label={`${piece.color === "w" ? "White" : "Black"} ${piece.type}`}
     >
