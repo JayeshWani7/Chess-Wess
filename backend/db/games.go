@@ -4,8 +4,23 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ChessWess/backend/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// GetGame retrieves a game by ID.
+func GetGame(ctx context.Context, pool *pgxpool.Pool, gameID string) (*models.Game, error) {
+	var game models.Game
+	err := pool.QueryRow(ctx,
+		`SELECT id, white_player_id, black_player_id, status, time_control, active_timeline_id, winner_id, result, created_at, updated_at
+		 FROM games WHERE id = $1`,
+		gameID,
+	).Scan(&game.ID, &game.WhitePlayerID, &game.BlackPlayerID, &game.Status, &game.TimeControl, &game.ActiveTimelineID, &game.WinnerID, &game.Result, &game.CreatedAt, &game.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("GetGame: %w", err)
+	}
+	return &game, nil
+}
 
 // GetActiveTimelineID returns the active timeline for a game, if set.
 func GetActiveTimelineID(ctx context.Context, pool *pgxpool.Pool, gameID string) (*string, error) {

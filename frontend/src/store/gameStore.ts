@@ -60,6 +60,31 @@ export interface TimelineData {
   nodes_partial?: boolean;
 }
 
+// Phase 5: Energy System Types
+export interface PlayerEnergy {
+  id: string;
+  game_id: string;
+  player_id: string;
+  energy_remaining: number;
+  energy_spent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TimelineMetadata {
+  id: string;
+  timeline_id: string;
+  game_id: string;
+  locked_by_player_id?: string | null;
+  is_locked: boolean;
+  stability_score: number; // 0-100
+  energy_cost_to_create: number;
+  paradox_count: number;
+  is_collapsed: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface GameState {
   // Active game
   activeGameId: string | null;
@@ -87,6 +112,10 @@ interface GameState {
   activeTimelineLatestNodeId: string | null;
   selectedTimelineNodeId: string | null;
 
+  // Phase 5: Energy System
+  playerEnergy: PlayerEnergy | null;
+  timelineMetadata: Record<string, TimelineMetadata>; // keyed by timeline_id
+
   // Actions
   setActiveGame: (gameId: string, info: GameInfo, color: "w" | "b") => void;
   loadMoves: (moves: GameMove[]) => void;
@@ -100,6 +129,12 @@ interface GameState {
   setGameOver: (result: GameResult, winnerId: string | null) => void;
   setPlayerColor: (color: "w" | "b" | null) => void;
   leaveGame: () => void;
+  // Phase 5 actions
+  setPlayerEnergy: (energy: PlayerEnergy) => void;
+  setTimelineMetadata: (metadata: TimelineMetadata[]) => void;
+  updateTimelineMetadata: (timelineId: string, metadata: Partial<TimelineMetadata>) => void;
+  consumeEnergy: (amount: number) => void;
+  refundEnergy: (amount: number) => void;
 }
 
 function buildMovesFromTimeline(nodes: TimelineNode[]): GameMove[] {
@@ -139,6 +174,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
   activeTimelineId: null,
   activeTimelineLatestNodeId: null,
   selectedTimelineNodeId: null,
+  // Phase 5 state
+  playerEnergy: null,
+  timelineMetadata: {},
 
   setActiveGame: (gameId, info, color) => {
     const chess = new Chess();
@@ -161,6 +199,8 @@ export const useGameStore = create<GameState>()((set, get) => ({
       activeTimelineId: info.active_timeline_id ?? null,
       activeTimelineLatestNodeId: null,
       selectedTimelineNodeId: null,
+      playerEnergy: null,
+      timelineMetadata: {},
     });
   },
 
@@ -332,5 +372,55 @@ export const useGameStore = create<GameState>()((set, get) => ({
       activeTimelineId: null,
       activeTimelineLatestNodeId: null,
       selectedTimelineNodeId: null,
+      playerEnergy: null,
+      timelineMetadata: {},
     }),
+
+  // Phase 5: Energy Management Actions
+  setPlayerEnergy: (energy) => set({ playerEnergy: energy }),
+
+  setTimelineMetadata: (metadata) => {
+    const timelineMetadata: Record<string, TimelineMetadata> = {};
+    for (const m of metadata) {
+      timelineMetadata[m.timeline_id] = m;
+    }
+    set({ timelineMetadata });
+  },
+
+  updateTimelineMetadata: (timelineId, metadata) => {
+    set((state) => ({
+      timelineMetadata: {
+        ...state.timelineMetadata,
+        [timelineId]: {
+          ...state.timelineMetadata[timelineId],
+          ...metadata,
+        },
+      },
+    }));
+  },
+
+  consumeEnergy: (amount) => {
+    set((state) => {
+      if (!state.playerEnergy) return {};
+      return {
+        playerEnergy: {
+          ...state.playerEnergy,
+          energy_remaining: state.playerEnergy.energy_remaining - amount,
+          energy_spent: state.playerEnergy.energy_spent + amount,
+        },
+      };
+    });
+  },
+
+  refundEnergy: (amount) => {
+    set((state) => {
+      if (!state.playerEnergy) return {};
+      return {
+        playerEnergy: {
+          ...state.playerEnergy,
+          energy_remaining: state.playerEnergy.energy_remaining + amount,
+        },
+      };
+    });
+  },
 }));

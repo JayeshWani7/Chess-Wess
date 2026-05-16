@@ -19,6 +19,10 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		alterGamesAddActiveTimeline,
 		createGameNodesTable,
 		createNodeChildrenTable,
+		// Phase 5: Time Mechanics & Energy System
+		createPlayerEnergyTable,
+		createTimelineMetadataTable,
+		alterTimelinesAddLocking,
 	}
 
 	for i, m := range migrations {
@@ -165,4 +169,78 @@ CREATE TABLE IF NOT EXISTS node_children (
 
 CREATE INDEX IF NOT EXISTS idx_node_children_parent ON node_children(parent_node_id);
 CREATE INDEX IF NOT EXISTS idx_node_children_child ON node_children(child_node_id);
+`
+
+const createPlayerEnergyTable = `
+CREATE TABLE IF NOT EXISTS player_energy (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id           UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  player_id         UUID NOT NULL REFERENCES users(id),
+  energy_remaining  INT NOT NULL DEFAULT 15,      -- Phase 5: Players start with 15 energy
+  energy_spent      INT NOT NULL DEFAULT 0,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (game_id, player_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_player_energy_game_id ON player_energy(game_id);
+CREATE INDEX IF NOT EXISTS idx_player_energy_player_id ON player_energy(player_id);
+`
+
+const createTimelineMetadataTable = `
+CREATE TABLE IF NOT EXISTS timeline_metadata (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  timeline_id           UUID NOT NULL REFERENCES timelines(id) ON DELETE CASCADE,
+  game_id               UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  locked_by_player_id   UUID REFERENCES users(id),      -- NULL if not locked
+  is_locked             BOOLEAN NOT NULL DEFAULT FALSE,
+  stability_score       INT NOT NULL DEFAULT 100,       -- 0-100, decreases with paradoxes
+  energy_cost_to_create INT NOT NULL DEFAULT 0,         -- Cost in energy to create this timeline
+  paradox_count         INT NOT NULL DEFAULT 0,         -- Number of contradictions detected
+  is_collapsed          BOOLEAN NOT NULL DEFAULT FALSE, -- Marked for deletion in Time Collapse
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (timeline_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_timeline_metadata_game_id ON timeline_metadata(game_id);
+CREATE INDEX IF NOT EXISTS idx_timeline_metadata_timeline_id ON timeline_metadata(timeline_id);
+CREATE INDEX IF NOT EXISTS idx_timeline_metadata_locked ON timeline_metadata(is_locked);
+CREATE INDEX IF NOT EXISTS idx_timeline_metadata_collapsed ON timeline_metadata(is_collapsed);
+`
+
+const alterTimelinesAddLocking = `
+DO $$ BEGIN
+  -- Player energy tracking
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='player_energy' AND column_name='energy_remaining') THEN
+    CREATE TABLE IF NOT EXISTS player_energy (
+      id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      game_id           UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      player_id         UUID NOT NULL REFERENCES users(id),
+      energy_remaining  INT NOT NULL DEFAULT 15,
+      energy_spent      INT NOT NULL DEFAULT 0,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (game_id, player_id)
+    );
+  END IF;
+  
+  -- Timeline metadata (locking, stability, paradoxes)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='timeline_metadata' AND column_name='is_locked') THEN
+    CREATE TABLE IF NOT EXISTS timeline_metadata (
+      id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      timeline_id           UUID NOT NULL REFERENCES timelines(id) ON DELETE CASCADE,
+      game_id               UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+      locked_by_player_id   UUID REFERENCES users(id),
+      is_locked             BOOLEAN NOT NULL DEFAULT FALSE,
+      stability_score       INT NOT NULL DEFAULT 100,
+      energy_cost_to_create INT NOT NULL DEFAULT 0,
+      paradox_count         INT NOT NULL DEFAULT 0,
+      is_collapsed          BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (timeline_id)
+    );
+  END IF;
+END $$;
 `
