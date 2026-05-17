@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ChessWess/backend/db"
 	"github.com/notnil/chess"
 )
 
@@ -203,6 +204,9 @@ func (b *BotEngine) playMove(ctx context.Context, game *chess.Game) {
 		},
 	})
 
+	// Phase 5: Bot strategic energy usage - lock favorable timelines based on rating
+	b.maybeUseEnergyToLock(ctx, game)
+
 	outcome := game.Outcome()
 	if outcome != chess.NoOutcome {
 		method := game.Method()
@@ -245,6 +249,75 @@ func (b *BotEngine) outcomeWinner(outcome chess.Outcome) string {
 	default:
 		return ""
 	}
+}
+
+// maybeUseEnergyToLock strategically locks timelines when bot is winning (based on rating)
+// Phase 5: Bots use energy to prevent opponents from rewinding favorable positions
+// Higher-rated bots are more aggressive about locking timelines
+func (b *BotEngine) maybeUseEnergyToLock(ctx context.Context, game *chess.Game) {
+	// Only try to lock if rating is 1000+ (weaker bots don't strategize this way)
+	if b.rating < 1000 {
+		return
+	}
+
+	// Evaluate the position from bot's perspective
+	eval := b.evaluateGame(game, true)
+
+	// Determine locking threshold based on rating
+	// Higher rating = more aggressive locking (lower threshold)
+	var lockThreshold float64
+	switch {
+	case b.rating <= 1000:
+		lockThreshold = 300 // Only lock if winning big
+	case b.rating <= 1200:
+		lockThreshold = 200
+	case b.rating <= 1400:
+		lockThreshold = 100
+	default:
+		lockThreshold = 50 // Even small advantage warrants locking
+	}
+
+	// Flip evaluation if bot is Black (negative eval means winning)
+	if b.botColor == chess.Black {
+		eval = -eval
+	}
+
+	// Only lock if winning substantially
+	if eval < lockThreshold {
+		return
+	}
+
+	// Also check probability based on rating (higher rating = more willing to lock)
+	lockProbability := float64(b.rating-1000) / 700.0 // scales from 0 to ~1
+	if rand.Float64() > lockProbability {
+		return
+	}
+
+	// Get the active timeline and lock it
+	var timelineID string
+	err := b.server.db.QueryRow(ctx,
+		`SELECT active_timeline_id FROM games WHERE id = $1`,
+		b.gameID,
+	).Scan(&timelineID)
+	if err != nil || timelineID == "" {
+		return
+	}
+
+	// Check if bot has enough energy
+	botEnergy, err := db.GetPlayerEnergy(ctx, b.server.db, b.gameID, b.botUserID)
+	if err != nil || botEnergy.EnergyRemaining < 3 {
+		return // Need 3 energy to lock
+	}
+
+	// Lock the timeline
+	err = db.LockTimeline(ctx, b.server.db, timelineID, b.botUserID)
+	if err != nil {
+		return // Silently fail if lock doesn't work
+	}
+
+	// Spend the energy
+	_ = db.SpendEnergy(ctx, b.server.db, b.gameID, b.botUserID, 3, "lock_timeline",
+		"Bot "+string(rune(b.rating))+" locked favorable position")
 }
 
 // Move selection strategies

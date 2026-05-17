@@ -114,6 +114,7 @@ interface GameState {
 
   // Phase 5: Energy System
   playerEnergy: PlayerEnergy | null;
+  opponentEnergy: PlayerEnergy | null;
   timelineMetadata: Record<string, TimelineMetadata>; // keyed by timeline_id
 
   // Actions
@@ -131,6 +132,7 @@ interface GameState {
   leaveGame: () => void;
   // Phase 5 actions
   setPlayerEnergy: (energy: PlayerEnergy) => void;
+  setOpponentEnergy: (energy: PlayerEnergy | null) => void;
   setTimelineMetadata: (metadata: TimelineMetadata[]) => void;
   updateTimelineMetadata: (timelineId: string, metadata: Partial<TimelineMetadata>) => void;
   consumeEnergy: (amount: number) => void;
@@ -176,6 +178,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
   selectedTimelineNodeId: null,
   // Phase 5 state
   playerEnergy: null,
+  opponentEnergy: null,
   timelineMetadata: {},
 
   setActiveGame: (gameId, info, color) => {
@@ -200,6 +203,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       activeTimelineLatestNodeId: null,
       selectedTimelineNodeId: null,
       playerEnergy: null,
+      opponentEnergy: null,
       timelineMetadata: {},
     });
   },
@@ -373,11 +377,14 @@ export const useGameStore = create<GameState>()((set, get) => ({
       activeTimelineLatestNodeId: null,
       selectedTimelineNodeId: null,
       playerEnergy: null,
+      opponentEnergy: null,
       timelineMetadata: {},
     }),
 
   // Phase 5: Energy Management Actions
   setPlayerEnergy: (energy) => set({ playerEnergy: energy }),
+
+  setOpponentEnergy: (energy) => set({ opponentEnergy: energy }),
 
   setTimelineMetadata: (metadata) => {
     const timelineMetadata: Record<string, TimelineMetadata> = {};

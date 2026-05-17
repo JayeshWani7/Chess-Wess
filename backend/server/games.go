@@ -327,6 +327,12 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Phase 5: Initialize energy for both players
+	if err := db.InitPlayerEnergy(r.Context(), s.db, g.ID, whiteID, blackID, 15); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to initialize energy: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
 	// Start the bot engine in the background
 	engine := NewBotEngine(s, g.ID, botID, botColor, req.BotRating)
 	go engine.Run(context.Background(), initialFEN)

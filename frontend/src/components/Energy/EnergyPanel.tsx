@@ -249,6 +249,73 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
 };
 
 /**
+ * OpponentEnergyPanel displays the opponent's energy pool
+ * Phase 5: Time Mechanics - shows opponent's energy remaining for bots and players
+ */
+interface OpponentEnergyPanelProps {
+  opponentName?: string;
+  isBot?: boolean;
+  botRating?: number;
+  className?: string;
+}
+
+export const OpponentEnergyPanel: React.FC<OpponentEnergyPanelProps> = ({
+  opponentName = "Opponent",
+  isBot = false,
+  botRating = 0,
+  className = "",
+}) => {
+  const opponentEnergy = useGameStore((state) => state.opponentEnergy);
+
+  if (!opponentEnergy) {
+    return null;
+  }
+
+  const energyPercentage = (opponentEnergy.energy_remaining / 15) * 100; // Max 15 energy
+
+  const botBadge = isBot ? (
+    <span className="text-xs bg-amber-900 text-amber-300 px-2 py-1 rounded font-bold border border-amber-600">
+      Bot {botRating}
+    </span>
+  ) : null;
+
+  return (
+    <div className={`bg-gray-800 rounded-lg p-4 border border-red-500 ${className}`}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-bold text-white">{opponentName.toUpperCase()}</h3>
+        <div className="flex gap-2 items-center">{botBadge}</div>
+      </div>
+
+      {/* Opponent Energy Bar */}
+      <div className="w-full bg-gray-700 rounded-full h-6 overflow-hidden border border-red-400 mb-2">
+        <div
+          className={`h-full transition-all duration-300 ${
+            energyPercentage > 50
+              ? "bg-gradient-to-r from-blue-500 to-cyan-400"
+              : energyPercentage > 25
+              ? "bg-gradient-to-r from-yellow-500 to-orange-400"
+              : "bg-gradient-to-r from-red-600 to-red-500"
+          }`}
+          style={{ width: `${energyPercentage}%` }}
+        />
+      </div>
+
+      {/* Opponent Energy Stats */}
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="bg-gray-700 p-2 rounded border border-gray-600">
+          <p className="text-gray-400">Remaining</p>
+          <p className="text-xl font-bold text-cyan-400">{opponentEnergy.energy_remaining}</p>
+        </div>
+        <div className="bg-gray-700 p-2 rounded border border-gray-600">
+          <p className="text-gray-400">Spent</p>
+          <p className="text-xl font-bold text-orange-400">{opponentEnergy.energy_spent}</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
  * EnergyNotification shows warnings when energy is low or actions are blocked
  */
 interface EnergyNotificationProps {

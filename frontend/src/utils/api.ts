@@ -196,4 +196,11 @@ export const api = {
 
   listMyGames: (token: string) =>
     request<GameHistoryEntry[]>("/api/games/history", {}, token),
+
+  // Phase 5: Energy endpoints
+  getPlayerEnergy: (token: string, gameId: string) =>
+    request<any>(`/api/games/${gameId}/energy`, {}, token),
+
+  getOpponentEnergy: (token: string, gameId: string, opponentId: string) =>
+    request<any>(`/api/games/${gameId}/energy/${opponentId}`, {}, token),
 };

@@ -9,6 +9,7 @@ import PlayerClock from "../components/Game/PlayerClock";
 import GameStatus from "../components/Game/GameStatus";
 import GameOverModal from "../components/Game/GameOverModal";
 import TimelinePanel from "../components/Timeline/TimelinePanel";
+import { EnergyPanel, OpponentEnergyPanel } from "../components/Energy/EnergyPanel";
 
 export default function GamePage() {
   const {
@@ -30,11 +31,16 @@ export default function GamePage() {
     timelines,
     setActiveTimelineId,
     setPlayerColor,
+    setPlayerEnergy,
+    setOpponentEnergy,
   } = useGameStore();
 
   const { token, userId, username } = useAuthStore();
   const [resigning, setResigning] = useState(false);
   const [opponentName, setOpponentName] = useState("Opponent");
+  const [opponentId, setOpponentId] = useState<string | null>(null);
+  const [isOpponentBot, setIsOpponentBot] = useState(false);
+  const [opponentBotRating, setOpponentBotRating] = useState(0);
   const [timelineNodeLimit, setTimelineNodeLimit] = useState<number | null>(200);
   const timelineLimitRef = useRef<number | null>(200);
   const connectedRef = useRef(false);
@@ -146,14 +152,35 @@ export default function GamePage() {
     if (!gameInfo || !userId || !token) return;
     const expectedColor = gameInfo.black_player_id === userId ? "b" : "w";
     setPlayerColor(expectedColor);
-    const opponentId =
+    const oppId =
       expectedColor === "w" ? gameInfo.black_player_id : gameInfo.white_player_id;
-    if (!opponentId) return;
+    if (!oppId) return;
 
-    api.getUser(token, opponentId)
-      .then((u) => setOpponentName(u.username))
+    setOpponentId(oppId);
+
+    api.getUser(token, oppId)
+      .then((u) => {
+        setOpponentName(u.username);
+        setIsOpponentBot(u.is_bot);
+        if (u.is_bot) {
+          setOpponentBotRating(u.rating || 0);
+        }
+      })
       .catch(() => setOpponentName("Opponent"));
-  }, [gameInfo, userId, token, setPlayerColor]);
+
+    // Fetch player energy for both players
+    Promise.all([
+      api.getPlayerEnergy(token, gameInfo.id),
+      api.getOpponentEnergy(token, gameInfo.id, oppId),
+    ])
+      .then(([playerEnergy, opponentEnergy]) => {
+        setPlayerEnergy(playerEnergy);
+        setOpponentEnergy(opponentEnergy);
+      })
+      .catch(() => {
+        // Energy fetch is optional
+      });
+  }, [gameInfo, userId, token, setPlayerColor, setPlayerEnergy, setOpponentEnergy]);
 
   // Detect checkmate / stalemate / draw locally after every move
   // (chess is a new instance after each applyMove, so this effect re-fires correctly)
@@ -252,7 +279,16 @@ export default function GamePage() {
       <div className="flex flex-col lg:flex-row gap-6 w-full max-w-5xl items-start justify-center">
         {/* Board column */}
         <div className="flex flex-col gap-3 items-center">
-          {/* Opponent clock (top) */}
+          {/* Opponent energy (top) */}
+          <div className="w-full" style={{ width: "min(80vw, 560px)" }}>
+            <OpponentEnergyPanel
+              opponentName={opponentName}
+              isBot={isOpponentBot}
+              botRating={opponentBotRating}
+            />
+          </div>
+
+          {/* Opponent clock */}
           <div className="w-full" style={{ width: "min(80vw, 560px)" }}>
             <PlayerClock
               color={playerColor === "w" ? "b" : "w"}
@@ -262,12 +298,17 @@ export default function GamePage() {
 
           <ChessBoard />
 
-          {/* Player clock (bottom) */}
+          {/* Player clock */}
           <div className="w-full" style={{ width: "min(80vw, 560px)" }}>
             <PlayerClock
               color={playerColor ?? "w"}
               username={username ?? "You"}
             />
+          </div>
+
+          {/* Player energy (bottom) */}
+          <div className="w-full" style={{ width: "min(80vw, 560px)" }}>
+            <EnergyPanel />
           </div>
         </div>
 

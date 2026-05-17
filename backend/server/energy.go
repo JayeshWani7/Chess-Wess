@@ -18,18 +18,35 @@ func (s *Server) handleEnergyRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	gameID := parts[0]
+	requestingPlayerID := r.Context().Value("userID").(string)
 	action := parts[2]
-	playerID := r.Context().Value("userID").(string)
+	
+	// If parts[2] is a UUID (player ID), treat it as getting specific player energy
+	// Format: /api/games/{id}/energy/{playerID}
+	var targetPlayerID string
+	if len(parts) > 3 && parts[3] != "" {
+		// Full path: /api/games/{id}/energy/{playerID}/{action}
+		targetPlayerID = parts[2]
+		action = parts[3]
+	} else if isUUID(parts[2]) {
+		// Simple path: /api/games/{id}/energy/{playerID}
+		targetPlayerID = parts[2]
+		action = ""
+	}
 
 	switch {
-	case r.Method == http.MethodGet && action == "":
-		s.getPlayerEnergy(w, r, gameID, playerID)
+	case r.Method == http.MethodGet && action == "" && targetPlayerID == "":
+		// Get requesting player's energy
+		s.getPlayerEnergy(w, r, gameID, requestingPlayerID)
+	case r.Method == http.MethodGet && action == "" && targetPlayerID != "":
+		// Get specific player's energy (for opponent display)
+		s.getSpecificPlayerEnergy(w, r, gameID, requestingPlayerID, targetPlayerID)
 	case r.Method == http.MethodPost && action == "spend":
-		s.spendEnergy(w, r, gameID, playerID)
+		s.spendEnergy(w, r, gameID, requestingPlayerID)
 	case r.Method == http.MethodPost && action == "refund":
-		s.refundEnergy(w, r, gameID, playerID)
+		s.refundEnergy(w, r, gameID, requestingPlayerID)
 	case r.Method == http.MethodPost && action == "lock-timeline":
-		s.lockTimeline(w, r, gameID, playerID)
+		s.lockTimeline(w, r, gameID, requestingPlayerID)
 	case r.Method == http.MethodGet && action == "timeline-status":
 		s.getTimelineStatus(w, r, gameID)
 	default:
@@ -56,6 +73,43 @@ func (s *Server) getPlayerEnergy(w http.ResponseWriter, r *http.Request, gameID,
 	}
 
 	pe, err := db.GetPlayerEnergy(ctx, s.db, gameID, playerID)
+	if err != nil {
+		http.Error(w, "Failed to get energy", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pe)
+}
+
+// getSpecificPlayerEnergy returns energy level for a specific player (allows viewing opponent's energy)
+// GET /api/games/{gameID}/energy/{playerID}
+func (s *Server) getSpecificPlayerEnergy(w http.ResponseWriter, r *http.Request, gameID, requestingPlayerID, targetPlayerID string) {
+	ctx := r.Context()
+
+	// Verify requesting player is in this game
+	game, err := db.GetGame(ctx, s.db, gameID)
+	if err != nil {
+		http.Error(w, "Game not found", http.StatusNotFound)
+		return
+	}
+
+	if game.WhitePlayerID == nil || game.BlackPlayerID == nil ||
+		(*game.WhitePlayerID != requestingPlayerID && *game.BlackPlayerID != requestingPlayerID) {
+		http.Error(w, "Not authorized", http.StatusForbidden)
+		return
+	}
+
+	// Verify target player is in this game
+	if (game.WhitePlayerID != nil && *game.WhitePlayerID == targetPlayerID) ||
+		(game.BlackPlayerID != nil && *game.BlackPlayerID == targetPlayerID) {
+		// Target player is in the game, allow fetching their energy
+	} else {
+		http.Error(w, "Target player not in this game", http.StatusForbidden)
+		return
+	}
+
+	pe, err := db.GetPlayerEnergy(ctx, s.db, gameID, targetPlayerID)
 	if err != nil {
 		http.Error(w, "Failed to get energy", http.StatusInternalServerError)
 		return
@@ -269,4 +323,17 @@ func (s *Server) getEnergyStatus(w http.ResponseWriter, r *http.Request, gameID,
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// isUUID checks if a string looks like a UUID (rough check)
+func isUUID(s string) bool {
+	// UUIDs are typically 36 characters with hyphens (8-4-4-4-12 format)
+	// or 32 characters without hyphens
+	if len(s) == 36 && strings.Count(s, "-") == 4 {
+		return true
+	}
+	if len(s) == 32 && strings.Count(s, "-") == 0 {
+		return true
+	}
+	return false
 }
