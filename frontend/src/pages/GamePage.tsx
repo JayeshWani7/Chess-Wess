@@ -3,6 +3,7 @@ import { useGameStore } from "../store/gameStore";
 import { useAuthStore } from "../store/authStore";
 import { wsClient, type WSMessage } from "../utils/wsClient";
 import { api } from "../utils/api";
+import { useEnergy } from "../hooks/useEnergy";
 import ChessBoard from "../components/Board/ChessBoard";
 import MoveHistory from "../components/Game/MoveHistory";
 import PlayerClock from "../components/Game/PlayerClock";
@@ -34,6 +35,8 @@ export default function GamePage() {
     setPlayerEnergy,
     setOpponentEnergy,
   } = useGameStore();
+
+  const { rewindTimeline, jumpTimeline } = useEnergy();
 
   const { token, userId, username } = useAuthStore();
   const [resigning, setResigning] = useState(false);
@@ -218,14 +221,30 @@ export default function GamePage() {
     leaveGame();
   }
 
-  function handleSwitchTimeline(timelineId: string) {
+  async function handleSwitchTimeline(timelineId: string) {
     if (!timelineId) return;
+    if (timelineId !== activeTimelineId) {
+      const ok = await jumpTimeline(timelineId);
+      if (!ok) return;
+    }
     setActiveTimelineId(timelineId);
     wsClient.switchTimeline(timelineId);
   }
 
-  function handleRewind(nodeId: string) {
+  async function handleRewind(nodeId: string) {
     if (!nodeId) return;
+    const targetNode = nodesById[nodeId];
+    const activeNode = activeTimelineLatestNodeId
+      ? nodesById[activeTimelineLatestNodeId]
+      : null;
+    if (!targetNode || !activeNode) return;
+
+    const turnsBack = Math.max(0, activeNode.turn_number - targetNode.turn_number);
+    if (turnsBack > 0) {
+      const ok = await rewindTimeline(turnsBack, targetNode.timeline_id);
+      if (!ok) return;
+    }
+
     wsClient.sendRewind(nodeId);
   }
 

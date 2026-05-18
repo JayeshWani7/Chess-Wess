@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { useGameStore, PlayerEnergy, TimelineMetadata } from "@/store/gameStore";
+import { useGameStore, PlayerEnergy, TimelineMetadata } from "../store/gameStore";
+import { useAuthStore } from "../store/authStore";
 import {
   spendEnergy,
   lockTimeline as lockTimelineAPI,
@@ -7,7 +8,7 @@ import {
   ENERGY_COSTS,
   calculateRewindCost,
   hasEnoughEnergy,
-} from "@/utils/energy";
+} from "../utils/energy";
 
 interface UseEnergyReturn {
   playerEnergy: PlayerEnergy | null;
@@ -31,16 +32,16 @@ export function useEnergy(): UseEnergyReturn {
   const timelineMetadata = useGameStore((state) => state.timelineMetadata);
   const setPlayerEnergy = useGameStore((state) => state.setPlayerEnergy);
   const updateTimelineMetadata = useGameStore((state) => state.updateTimelineMetadata);
-  const consumeEnergy = useGameStore((state) => state.consumeEnergy);
+  const token = useAuthStore((state) => state.token);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refreshEnergy = useCallback(async () => {
-    if (!gameId) return;
+    if (!gameId || !token) return;
     try {
       setLoading(true);
-      const energy = await fetchPlayerEnergy(gameId);
+      const energy = await fetchPlayerEnergy(token, gameId);
       setPlayerEnergy(energy);
       setError(null);
     } catch (err) {
@@ -48,7 +49,7 @@ export function useEnergy(): UseEnergyReturn {
     } finally {
       setLoading(false);
     }
-  }, [gameId, setPlayerEnergy]);
+  }, [gameId, token, setPlayerEnergy]);
 
   /**
    * Rewind to N turns back in current timeline
@@ -56,7 +57,7 @@ export function useEnergy(): UseEnergyReturn {
    */
   const rewindTimeline = useCallback(
     async (turnsBack: number, timelineId: string): Promise<boolean> => {
-      if (!gameId || !playerEnergy) return false;
+      if (!gameId || !token || !playerEnergy) return false;
 
       const cost = calculateRewindCost(turnsBack);
 
@@ -70,13 +71,13 @@ export function useEnergy(): UseEnergyReturn {
       try {
         setLoading(true);
         const updated = await spendEnergy(
+          token,
           gameId,
           cost,
           "rewind",
           `Rewound ${turnsBack} turns in timeline ${timelineId}`
         );
         setPlayerEnergy(updated);
-        consumeEnergy(cost);
         setError(null);
         return true;
       } catch (err) {
@@ -87,7 +88,7 @@ export function useEnergy(): UseEnergyReturn {
         setLoading(false);
       }
     },
-    [gameId, playerEnergy, setPlayerEnergy, consumeEnergy]
+    [gameId, token, playerEnergy, setPlayerEnergy]
   );
 
   /**
@@ -96,7 +97,7 @@ export function useEnergy(): UseEnergyReturn {
    */
   const jumpTimeline = useCallback(
     async (targetTimelineId: string): Promise<boolean> => {
-      if (!gameId || !playerEnergy) return false;
+      if (!gameId || !token || !playerEnergy) return false;
 
       const cost = ENERGY_COSTS.JUMP_TIMELINE;
 
@@ -110,13 +111,13 @@ export function useEnergy(): UseEnergyReturn {
       try {
         setLoading(true);
         const updated = await spendEnergy(
+          token,
           gameId,
           cost,
           "jump_timeline",
           `Jumped to timeline ${targetTimelineId}`
         );
         setPlayerEnergy(updated);
-        consumeEnergy(cost);
         setError(null);
         return true;
       } catch (err) {
@@ -127,7 +128,7 @@ export function useEnergy(): UseEnergyReturn {
         setLoading(false);
       }
     },
-    [gameId, playerEnergy, setPlayerEnergy, consumeEnergy]
+    [gameId, token, playerEnergy, setPlayerEnergy]
   );
 
   /**
@@ -136,7 +137,7 @@ export function useEnergy(): UseEnergyReturn {
    */
   const lockTimeline = useCallback(
     async (timelineId: string): Promise<boolean> => {
-      if (!gameId || !playerEnergy) return false;
+      if (!gameId || !token || !playerEnergy) return false;
 
       const cost = ENERGY_COSTS.LOCK_TIMELINE;
 
@@ -149,13 +150,10 @@ export function useEnergy(): UseEnergyReturn {
 
       try {
         setLoading(true);
-        const updated = await lockTimelineAPI(gameId, timelineId);
-        setPlayerEnergy(updated.player_energy || playerEnergy);
-        updateTimelineMetadata(timelineId, {
-          is_locked: true,
-          locked_by_player_id: playerEnergy.player_id,
-        });
-        consumeEnergy(cost);
+        const timelineMeta = await lockTimelineAPI(token, gameId, timelineId);
+        const updatedEnergy = await fetchPlayerEnergy(token, gameId);
+        setPlayerEnergy(updatedEnergy);
+        updateTimelineMetadata(timelineId, timelineMeta);
         setError(null);
         return true;
       } catch (err) {
@@ -166,7 +164,7 @@ export function useEnergy(): UseEnergyReturn {
         setLoading(false);
       }
     },
-    [gameId, playerEnergy, setPlayerEnergy, updateTimelineMetadata, consumeEnergy]
+    [gameId, token, playerEnergy, setPlayerEnergy, updateTimelineMetadata]
   );
 
   /**

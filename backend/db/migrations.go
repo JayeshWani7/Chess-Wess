@@ -21,6 +21,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		createNodeChildrenTable,
 		// Phase 5: Time Mechanics & Energy System
 		createPlayerEnergyTable,
+		createEnergyTransactionsTable,
 		createTimelineMetadataTable,
 		alterTimelinesAddLocking,
 	}
@@ -185,6 +186,21 @@ CREATE TABLE IF NOT EXISTS player_energy (
 
 CREATE INDEX IF NOT EXISTS idx_player_energy_game_id ON player_energy(game_id);
 CREATE INDEX IF NOT EXISTS idx_player_energy_player_id ON player_energy(player_id);
+`
+
+const createEnergyTransactionsTable = `
+CREATE TABLE IF NOT EXISTS energy_transactions (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id    UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  player_id  UUID NOT NULL REFERENCES users(id),
+  amount     INT NOT NULL,
+  action     VARCHAR(32) NOT NULL,
+  details    TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_energy_transactions_game_id ON energy_transactions(game_id);
+CREATE INDEX IF NOT EXISTS idx_energy_transactions_player_id ON energy_transactions(player_id);
 `
 
 const createTimelineMetadataTable = `

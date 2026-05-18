@@ -1,4 +1,4 @@
-import { api } from "@/utils/api";
+import { api } from "./api";
 
 /**
  * Energy cost constants for Phase 5
@@ -22,9 +22,8 @@ export function calculateRewindCost(turnsBack: number): number {
 /**
  * Fetches current player energy from server
  */
-export async function fetchPlayerEnergy(gameId: string): Promise<any> {
-  const response = await api(`/games/${gameId}/energy`);
-  return response;
+export async function fetchPlayerEnergy(token: string, gameId: string): Promise<any> {
+  return api.getPlayerEnergy(token, gameId);
 }
 
 /**
@@ -32,67 +31,54 @@ export async function fetchPlayerEnergy(gameId: string): Promise<any> {
  * Returns updated player energy
  */
 export async function spendEnergy(
+  token: string,
   gameId: string,
   amount: number,
   action: "rewind" | "jump_timeline" | "lock" | "paradox_penalty",
   details: string
 ): Promise<any> {
-  const response = await api(`/games/${gameId}/energy/spend`, {
-    method: "POST",
-    body: JSON.stringify({
-      amount,
-      action,
-      details,
-    }),
-  });
-  return response;
+  return api.spendEnergy(token, gameId, amount, action, details);
 }
 
 /**
  * Refunds energy (e.g., invalid action)
  */
 export async function refundEnergy(
+  token: string,
   gameId: string,
   amount: number,
   reason: string
 ): Promise<any> {
-  const response = await api(`/games/${gameId}/energy/refund`, {
-    method: "POST",
-    body: JSON.stringify({
-      amount,
-      reason,
-    }),
-  });
-  return response;
+  return api.refundEnergy(token, gameId, amount, reason);
 }
 
 /**
  * Locks a timeline (prevents opponent rewinding into it)
  */
-export async function lockTimeline(gameId: string, timelineId: string): Promise<any> {
-  const response = await api(`/games/${gameId}/energy/lock-timeline`, {
-    method: "POST",
-    body: JSON.stringify({
-      timeline_id: timelineId,
-    }),
-  });
-  return response;
+export async function lockTimeline(
+  token: string,
+  gameId: string,
+  timelineId: string
+): Promise<any> {
+  return api.lockTimeline(token, gameId, timelineId);
 }
 
 /**
  * Gets timeline status (lock, stability, paradoxes)
  */
-export async function getTimelineStatus(gameId: string, timelineId: string): Promise<any> {
-  const response = await api(`/games/${gameId}/energy/timeline-status?timeline_id=${timelineId}`);
-  return response;
+export async function getTimelineStatus(
+  token: string,
+  gameId: string,
+  timelineId: string
+): Promise<any> {
+  return api.getTimelineStatus(token, gameId, timelineId);
 }
 
 /**
  * Gets full energy status (player energy + all timelines)
  */
-export async function getEnergyStatus(gameId: string): Promise<any> {
-  const response = await api(`/games/${gameId}/energy/status`);
-  return response;
+export async function getEnergyStatus(token: string, gameId: string): Promise<any> {
+  return api.getEnergyStatus(token, gameId);
 }
 
 /**

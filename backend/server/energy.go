@@ -12,26 +12,32 @@ import (
 // handleEnergyRoutes routes /api/games/{id}/energy/* endpoints
 func (s *Server) handleEnergyRoutes(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/games/"), "/")
-	if len(parts) < 4 || parts[1] != "energy" {
+	if len(parts) < 2 || parts[1] != "energy" {
 		http.Error(w, "Invalid energy route", http.StatusBadRequest)
 		return
 	}
 
 	gameID := parts[0]
-	requestingPlayerID := r.Context().Value("userID").(string)
-	action := parts[2]
-	
-	// If parts[2] is a UUID (player ID), treat it as getting specific player energy
-	// Format: /api/games/{id}/energy/{playerID}
+	requestingPlayerID := r.Context().Value(userIDKey).(string)
+	action := ""
+
+	// /api/games/{id}/energy
+	// /api/games/{id}/energy/{playerID}
+	// /api/games/{id}/energy/{action}
+	// /api/games/{id}/energy/{playerID}/{action}
 	var targetPlayerID string
-	if len(parts) > 3 && parts[3] != "" {
-		// Full path: /api/games/{id}/energy/{playerID}/{action}
-		targetPlayerID = parts[2]
+	if len(parts) >= 3 && parts[2] != "" {
+		action = parts[2]
+		if isUUID(action) {
+			targetPlayerID = action
+			action = ""
+		}
+	}
+	if len(parts) >= 4 && parts[3] != "" {
+		if targetPlayerID == "" {
+			targetPlayerID = parts[2]
+		}
 		action = parts[3]
-	} else if isUUID(parts[2]) {
-		// Simple path: /api/games/{id}/energy/{playerID}
-		targetPlayerID = parts[2]
-		action = ""
 	}
 
 	switch {

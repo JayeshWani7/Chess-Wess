@@ -1,3 +1,5 @@
+import { useAuthStore } from "../store/authStore";
+
 const BASE = import.meta.env.VITE_API_URL ?? "";
 
 async function request<T>(
@@ -13,6 +15,10 @@ async function request<T>(
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   const data = await res.json();
+
+  if (res.status === 401) {
+    useAuthStore.getState().logout();
+  }
 
   if (!res.ok) {
     throw new Error((data as { error?: string }).error ?? "Request failed");
@@ -203,4 +209,50 @@ export const api = {
 
   getOpponentEnergy: (token: string, gameId: string, opponentId: string) =>
     request<any>(`/api/games/${gameId}/energy/${opponentId}`, {}, token),
+
+  spendEnergy: (
+    token: string,
+    gameId: string,
+    amount: number,
+    action: "rewind" | "jump_timeline" | "lock" | "paradox_penalty",
+    details: string
+  ) =>
+    request<any>(
+      `/api/games/${gameId}/energy/spend`,
+      {
+        method: "POST",
+        body: JSON.stringify({ amount, action, details }),
+      },
+      token
+    ),
+
+  refundEnergy: (token: string, gameId: string, amount: number, reason: string) =>
+    request<any>(
+      `/api/games/${gameId}/energy/refund`,
+      {
+        method: "POST",
+        body: JSON.stringify({ amount, reason }),
+      },
+      token
+    ),
+
+  lockTimeline: (token: string, gameId: string, timelineId: string) =>
+    request<any>(
+      `/api/games/${gameId}/energy/lock-timeline`,
+      {
+        method: "POST",
+        body: JSON.stringify({ timeline_id: timelineId }),
+      },
+      token
+    ),
+
+  getTimelineStatus: (token: string, gameId: string, timelineId: string) =>
+    request<any>(
+      `/api/games/${gameId}/energy/timeline-status?timeline_id=${timelineId}`,
+      {},
+      token
+    ),
+
+  getEnergyStatus: (token: string, gameId: string) =>
+    request<any>(`/api/games/${gameId}/energy/status`, {}, token),
 };
