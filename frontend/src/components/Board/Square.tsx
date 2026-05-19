@@ -33,7 +33,6 @@ export default function Square({
       style={{ aspectRatio: "1 / 1", minWidth: 0, minHeight: 0 }}
       onClick={() => onClick(square)}
     >
-      {/* Legal move dot / ring */}
       {isLegal && !piece && (
         <div className="absolute w-1/3 h-1/3 rounded-full bg-black/20 pointer-events-none" />
       )}
@@ -41,7 +40,6 @@ export default function Square({
         <div className="absolute inset-0 rounded-sm ring-4 ring-inset ring-black/30 pointer-events-none" />
       )}
 
-      {/* Piece — absolutely positioned so it never affects square layout */}
       {piece && (
         <motion.div
           key={`${piece.color}${piece.type}-${square}`}

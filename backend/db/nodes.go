@@ -8,8 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// CreateTimeline creates a new timeline for a game.
-// The root_node_id is initially NULL and will be set after the root node is created.
 func CreateTimeline(ctx context.Context, pool *pgxpool.Pool, gameID, createdByUser, timelineName string) (string, error) {
 	var timelineID string
 	var name string
@@ -41,8 +39,6 @@ func CreateTimeline(ctx context.Context, pool *pgxpool.Pool, gameID, createdByUs
 	return timelineID, nil
 }
 
-// CreateRootNode creates the initial (empty) game node for a timeline.
-// The root node has parent_node_id = NULL and move_uci = NULL.
 func CreateRootNode(ctx context.Context, pool *pgxpool.Pool,
 	gameID, timelineID, createdByUser string, initialFEN string) (string, error) {
 
@@ -59,7 +55,6 @@ func CreateRootNode(ctx context.Context, pool *pgxpool.Pool,
 		return "", fmt.Errorf("CreateRootNode: %w", err)
 	}
 
-	// Update timeline's root_node_id
 	_, err = pool.Exec(ctx,
 		`UPDATE timelines SET root_node_id = $1 WHERE id = $2`,
 		nodeID, timelineID,
@@ -71,8 +66,6 @@ func CreateRootNode(ctx context.Context, pool *pgxpool.Pool,
 	return nodeID, nil
 }
 
-// CreateBranchRootNode creates a root node for a branched timeline at a specific turn.
-// The root node has parent_node_id = NULL and move fields = NULL.
 func CreateBranchRootNode(ctx context.Context, pool *pgxpool.Pool,
 	gameID, timelineID, createdByUser, boardState string, turnNumber int) (string, error) {
 
@@ -100,8 +93,6 @@ func CreateBranchRootNode(ctx context.Context, pool *pgxpool.Pool,
 	return nodeID, nil
 }
 
-// CreateNode creates a new game node as a child of an existing parent node.
-// It automatically creates the parent-child relationship in node_children.
 func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, parentNodeID string) (string, error) {
 	var nodeID string
 
@@ -126,7 +117,6 @@ func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, 
 		return "", fmt.Errorf("CreateNode: %w", err)
 	}
 
-	// Record parent-child relationship
 	_, err = pool.Exec(ctx,
 		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)`,
 		parentNodeID, nodeID,
@@ -138,7 +128,6 @@ func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, 
 	return nodeID, nil
 }
 
-// LinkNodeChild records a parent-child relationship between two nodes.
 func LinkNodeChild(ctx context.Context, pool *pgxpool.Pool, parentNodeID, childNodeID string) error {
 	_, err := pool.Exec(ctx,
 		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)`+
@@ -151,7 +140,6 @@ func LinkNodeChild(ctx context.Context, pool *pgxpool.Pool, parentNodeID, childN
 	return nil
 }
 
-// GetNode retrieves a single node by ID.
 func GetNode(ctx context.Context, pool *pgxpool.Pool, nodeID string) (*models.GameNode, error) {
 	var node models.GameNode
 	var moveUCI, moveSAN, promotion, capturedPiece *string
@@ -174,7 +162,6 @@ func GetNode(ctx context.Context, pool *pgxpool.Pool, nodeID string) (*models.Ga
 		return nil, fmt.Errorf("GetNode: %w", err)
 	}
 
-	// Reconstruct Move struct
 	if moveUCI != nil && *moveUCI != "" {
 		node.Move = &models.Move{
 			UCI:       *moveUCI,
@@ -190,18 +177,13 @@ func GetNode(ctx context.Context, pool *pgxpool.Pool, nodeID string) (*models.Ga
 	return &node, nil
 }
 
-// GetNodePath retrieves all nodes from root to a target node (inclusive).
-// Returns them in order: root → ... → target.
 func GetNodePath(ctx context.Context, pool *pgxpool.Pool, targetNodeID string) (*models.GameNodePath, error) {
-	// Use recursive CTE to traverse upward from target to root, then reverse
 	rows, err := pool.Query(ctx,
 		`WITH RECURSIVE path AS (
-		   -- Base case: start from target node
 		   SELECT id, parent_node_id FROM game_nodes WHERE id = $1
 		   
 		   UNION
 		   
-		   -- Recursive case: get parent
 		   SELECT gn.id, gn.parent_node_id FROM game_nodes gn
 		   INNER JOIN path p ON gn.id = p.parent_node_id
 		 )
@@ -260,8 +242,6 @@ func GetNodePath(ctx context.Context, pool *pgxpool.Pool, targetNodeID string) (
 	}, nil
 }
 
-// GetNodeBranches retrieves all direct children of a parent node.
-// Returns branch info including node ID, move, and timeline.
 func GetNodeBranches(ctx context.Context, pool *pgxpool.Pool, parentNodeID string) ([]models.NodeBranch, error) {
 	rows, err := pool.Query(ctx,
 		`SELECT gn.id, gn.move_uci, gn.move_san, gn.timeline_id, gn.created_at
@@ -299,7 +279,6 @@ func GetNodeBranches(ctx context.Context, pool *pgxpool.Pool, parentNodeID strin
 	return branches, nil
 }
 
-// GetTimelineNodes retrieves all nodes in a timeline, ordered by turn number.
 func GetTimelineNodes(ctx context.Context, pool *pgxpool.Pool, timelineID string) ([]models.GameNode, error) {
 	rows, err := pool.Query(ctx,
 		`SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
@@ -349,7 +328,6 @@ func GetTimelineNodes(ctx context.Context, pool *pgxpool.Pool, timelineID string
 	return nodes, nil
 }
 
-// GetTimelineNodeCount returns the total node count for a timeline.
 func GetTimelineNodeCount(ctx context.Context, pool *pgxpool.Pool, timelineID string) (int, error) {
 	var count int
 	if err := pool.QueryRow(ctx,
@@ -361,8 +339,6 @@ func GetTimelineNodeCount(ctx context.Context, pool *pgxpool.Pool, timelineID st
 	return count, nil
 }
 
-// GetTimelineNodesWindow returns the root node plus the most recent nodes for a timeline.
-// This keeps graph rendering small while preserving the branch origin.
 func GetTimelineNodesWindow(ctx context.Context, pool *pgxpool.Pool, timelineID string, nodeLimit int) ([]models.GameNode, error) {
 	rows, err := pool.Query(ctx,
 		`WITH max_turn AS (
@@ -418,7 +394,6 @@ func GetTimelineNodesWindow(ctx context.Context, pool *pgxpool.Pool, timelineID 
 	return nodes, nil
 }
 
-// GetLatestTimelineNode retrieves the most recent node in a timeline.
 func GetLatestTimelineNode(ctx context.Context, pool *pgxpool.Pool, timelineID string) (*models.GameNode, error) {
 	rows, err := pool.Query(ctx,
 		`SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
@@ -467,7 +442,6 @@ func GetLatestTimelineNode(ctx context.Context, pool *pgxpool.Pool, timelineID s
 	return &node, nil
 }
 
-// GetGameTimelines retrieves all timelines for a game.
 func GetGameTimelines(ctx context.Context, pool *pgxpool.Pool, gameID string) ([]models.Timeline, error) {
 	rows, err := pool.Query(ctx,
 		`SELECT id, game_id, root_node_id, timeline_name, created_at, created_by_user
@@ -495,7 +469,6 @@ func GetGameTimelines(ctx context.Context, pool *pgxpool.Pool, gameID string) ([
 	return timelines, nil
 }
 
-// UpdateTimelineName sets the display name for a timeline if it belongs to the game.
 func UpdateTimelineName(ctx context.Context, pool *pgxpool.Pool, gameID, timelineID, timelineName string) error {
 	if len(timelineName) > 64 {
 		timelineName = timelineName[:64]

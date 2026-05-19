@@ -33,15 +33,11 @@ export default function LobbyPage() {
   const [timeControl, setTimeControl] = useState(600);
   const [color, setColor] = useState<"white" | "black">("white");
   const [error, setError] = useState<string | null>(null);
-
-  // Bot game state
   const [activeTab, setActiveTab] = useState<"human" | "bot" | "history">("bot");
   const [botRating, setBotRating] = useState(800);
   const [botColor, setBotColor] = useState<"white" | "black">("white");
   const [botTimeControl, setBotTimeControl] = useState(600);
   const [creatingBot, setCreatingBot] = useState(false);
-
-  // History state
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [reviewGame, setReviewGame] = useState<GameHistoryEntry | null>(null);
@@ -52,7 +48,6 @@ export default function LobbyPage() {
       const list = await api.listGames(token);
       setGames(list ?? []);
     } catch {
-      // silently ignore polling errors
     }
   }, [token]);
 
@@ -115,7 +110,6 @@ export default function LobbyPage() {
       const list = await api.listMyGames(token);
       setHistory(list ?? []);
     } catch {
-      // ignore
     } finally {
       setHistoryLoading(false);
     }
@@ -128,14 +122,12 @@ export default function LobbyPage() {
     return s === 0 ? `${m}m` : `${m}m ${s}s`;
   }
 
-  // If a game is selected for review, show the review page
   if (reviewGame) {
     return <GameReviewPage game={reviewGame} onBack={() => setReviewGame(null)} />;
   }
 
   return (
     <div className="min-h-screen p-6 max-w-4xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-chrono-accent">♟ ChessWess</h1>
         <div className="flex items-center gap-3">
@@ -146,7 +138,6 @@ export default function LobbyPage() {
         </div>
       </div>
 
-      {/* Tab switcher */}
       <div className="flex gap-2 mb-6">
         <button
           onClick={() => setActiveTab("bot")}
@@ -181,9 +172,7 @@ export default function LobbyPage() {
       </div>
 
       {activeTab === "bot" ? (
-        /* ── Bot game panel ── */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Bot difficulty */}
           <div className="card">
             <h2 className="font-semibold text-lg mb-4">Choose Difficulty</h2>
             <div className="space-y-2">
@@ -208,7 +197,6 @@ export default function LobbyPage() {
             </div>
           </div>
 
-          {/* Bot game options */}
           <div className="card">
             <h2 className="font-semibold text-lg mb-4">Game Options</h2>
             <div className="space-y-4">
@@ -265,9 +253,7 @@ export default function LobbyPage() {
           </div>
         </div>
       ) : activeTab === "human" ? (
-        /* ── Human game panel ── */
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Create game panel */}
           <div className="card md:col-span-1">
             <h2 className="font-semibold text-lg mb-4">New Game</h2>
 
@@ -324,7 +310,6 @@ export default function LobbyPage() {
             </div>
           </div>
 
-          {/* Open games list */}
           <div className="card md:col-span-2">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-lg">Open Games</h2>
@@ -380,7 +365,6 @@ export default function LobbyPage() {
           </div>
         </div>
       ) : (
-        /* ── History panel ── */
         <div className="card">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-lg">My Games</h2>

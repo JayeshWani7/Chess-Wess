@@ -8,7 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// GetGame retrieves a game by ID.
 func GetGame(ctx context.Context, pool *pgxpool.Pool, gameID string) (*models.Game, error) {
 	var game models.Game
 	err := pool.QueryRow(ctx,
@@ -22,7 +21,6 @@ func GetGame(ctx context.Context, pool *pgxpool.Pool, gameID string) (*models.Ga
 	return &game, nil
 }
 
-// GetActiveTimelineID returns the active timeline for a game, if set.
 func GetActiveTimelineID(ctx context.Context, pool *pgxpool.Pool, gameID string) (*string, error) {
 	var activeTimelineID *string
 	if err := pool.QueryRow(ctx,
@@ -34,8 +32,6 @@ func GetActiveTimelineID(ctx context.Context, pool *pgxpool.Pool, gameID string)
 	return activeTimelineID, nil
 }
 
-// SetActiveTimelineID sets the active timeline for a game.
-// It only succeeds if the timeline belongs to the game.
 func SetActiveTimelineID(ctx context.Context, pool *pgxpool.Pool, gameID, timelineID string) error {
 	ct, err := pool.Exec(ctx,
 		`UPDATE games

@@ -9,7 +9,6 @@ import (
 	"github.com/ChessWess/backend/models"
 )
 
-// handleEnergyRoutes routes /api/games/{id}/energy/* endpoints
 func (s *Server) handleEnergyRoutes(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/games/"), "/")
 	if len(parts) < 2 || parts[1] != "energy" {
@@ -21,10 +20,6 @@ func (s *Server) handleEnergyRoutes(w http.ResponseWriter, r *http.Request) {
 	requestingPlayerID := r.Context().Value(userIDKey).(string)
 	action := ""
 
-	// /api/games/{id}/energy
-	// /api/games/{id}/energy/{playerID}
-	// /api/games/{id}/energy/{action}
-	// /api/games/{id}/energy/{playerID}/{action}
 	var targetPlayerID string
 	if len(parts) >= 3 && parts[2] != "" {
 		action = parts[2]
@@ -42,10 +37,8 @@ func (s *Server) handleEnergyRoutes(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.Method == http.MethodGet && action == "" && targetPlayerID == "":
-		// Get requesting player's energy
 		s.getPlayerEnergy(w, r, gameID, requestingPlayerID)
 	case r.Method == http.MethodGet && action == "" && targetPlayerID != "":
-		// Get specific player's energy (for opponent display)
 		s.getSpecificPlayerEnergy(w, r, gameID, requestingPlayerID, targetPlayerID)
 	case r.Method == http.MethodPost && action == "spend":
 		s.spendEnergy(w, r, gameID, requestingPlayerID)
@@ -60,12 +53,9 @@ func (s *Server) handleEnergyRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// getPlayerEnergy returns current energy level for the requesting player
-// GET /api/games/{gameID}/energy
 func (s *Server) getPlayerEnergy(w http.ResponseWriter, r *http.Request, gameID, playerID string) {
 	ctx := r.Context()
 
-	// Verify player is in this game
 	game, err := db.GetGame(ctx, s.db, gameID)
 	if err != nil {
 		http.Error(w, "Game not found", http.StatusNotFound)
@@ -88,12 +78,9 @@ func (s *Server) getPlayerEnergy(w http.ResponseWriter, r *http.Request, gameID,
 	json.NewEncoder(w).Encode(pe)
 }
 
-// getSpecificPlayerEnergy returns energy level for a specific player (allows viewing opponent's energy)
-// GET /api/games/{gameID}/energy/{playerID}
 func (s *Server) getSpecificPlayerEnergy(w http.ResponseWriter, r *http.Request, gameID, requestingPlayerID, targetPlayerID string) {
 	ctx := r.Context()
 
-	// Verify requesting player is in this game
 	game, err := db.GetGame(ctx, s.db, gameID)
 	if err != nil {
 		http.Error(w, "Game not found", http.StatusNotFound)
@@ -106,10 +93,8 @@ func (s *Server) getSpecificPlayerEnergy(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	// Verify target player is in this game
 	if (game.WhitePlayerID != nil && *game.WhitePlayerID == targetPlayerID) ||
 		(game.BlackPlayerID != nil && *game.BlackPlayerID == targetPlayerID) {
-		// Target player is in the game, allow fetching their energy
 	} else {
 		http.Error(w, "Target player not in this game", http.StatusForbidden)
 		return
@@ -125,15 +110,12 @@ func (s *Server) getSpecificPlayerEnergy(w http.ResponseWriter, r *http.Request,
 	json.NewEncoder(w).Encode(pe)
 }
 
-// spendEnergyRequest defines energy spending request
 type spendEnergyRequest struct {
 	Amount  int    `json:"amount"`
-	Action  string `json:"action"` // "rewind", "jump_timeline", "lock", etc.
+	Action  string `json:"action"`
 	Details string `json:"details"`
 }
 
-// spendEnergy deducts energy from player's pool
-// POST /api/games/{gameID}/energy/spend
 func (s *Server) spendEnergy(w http.ResponseWriter, r *http.Request, gameID, playerID string) {
 	ctx := r.Context()
 
@@ -143,7 +125,6 @@ func (s *Server) spendEnergy(w http.ResponseWriter, r *http.Request, gameID, pla
 		return
 	}
 
-	// Verify player is in game
 	game, err := db.GetGame(ctx, s.db, gameID)
 	if err != nil {
 		http.Error(w, "Game not found", http.StatusNotFound)
@@ -156,14 +137,12 @@ func (s *Server) spendEnergy(w http.ResponseWriter, r *http.Request, gameID, pla
 		return
 	}
 
-	// Spend the energy
 	err = db.SpendEnergy(ctx, s.db, gameID, playerID, req.Amount, req.Action, req.Details)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Return updated energy
 	pe, err := db.GetPlayerEnergy(ctx, s.db, gameID, playerID)
 	if err != nil {
 		http.Error(w, "Failed to get updated energy", http.StatusInternalServerError)
@@ -175,14 +154,11 @@ func (s *Server) spendEnergy(w http.ResponseWriter, r *http.Request, gameID, pla
 	json.NewEncoder(w).Encode(pe)
 }
 
-// refundEnergyRequest defines energy refund request
 type refundEnergyRequest struct {
 	Amount int    `json:"amount"`
 	Reason string `json:"reason"`
 }
 
-// refundEnergy returns energy to player (e.g., on invalid action)
-// POST /api/games/{gameID}/energy/refund
 func (s *Server) refundEnergy(w http.ResponseWriter, r *http.Request, gameID, playerID string) {
 	ctx := r.Context()
 
@@ -192,8 +168,6 @@ func (s *Server) refundEnergy(w http.ResponseWriter, r *http.Request, gameID, pl
 		return
 	}
 
-	// Only allow self-refunds (host can refund players in disputes)
-	// This is a simplified check; add admin logic if needed
 	err := db.RefundEnergy(ctx, s.db, gameID, playerID, req.Amount, req.Reason)
 	if err != nil {
 		http.Error(w, "Failed to refund energy", http.StatusInternalServerError)
@@ -211,13 +185,10 @@ func (s *Server) refundEnergy(w http.ResponseWriter, r *http.Request, gameID, pl
 	json.NewEncoder(w).Encode(pe)
 }
 
-// lockTimelineRequest defines timeline lock request
 type lockTimelineRequest struct {
 	TimelineID string `json:"timeline_id"`
 }
 
-// lockTimeline locks a timeline (prevents opponent rewinding into it)
-// POST /api/games/{gameID}/energy/lock-timeline
 func (s *Server) lockTimeline(w http.ResponseWriter, r *http.Request, gameID, playerID string) {
 	ctx := r.Context()
 
@@ -227,7 +198,6 @@ func (s *Server) lockTimeline(w http.ResponseWriter, r *http.Request, gameID, pl
 		return
 	}
 
-	// Verify player is in game
 	game, err := db.GetGame(ctx, s.db, gameID)
 	if err != nil {
 		http.Error(w, "Game not found", http.StatusNotFound)
@@ -240,7 +210,6 @@ func (s *Server) lockTimeline(w http.ResponseWriter, r *http.Request, gameID, pl
 		return
 	}
 
-	// Cost: 3 energy per lock
 	lockCost := 3
 	err = db.SpendEnergy(ctx, s.db, gameID, playerID, lockCost, "lock_timeline", "Locked timeline "+req.TimelineID)
 	if err != nil {
@@ -248,10 +217,8 @@ func (s *Server) lockTimeline(w http.ResponseWriter, r *http.Request, gameID, pl
 		return
 	}
 
-	// Lock the timeline
 	err = db.LockTimeline(ctx, s.db, req.TimelineID, playerID)
 	if err != nil {
-		// Refund energy if lock fails
 		_ = db.RefundEnergy(ctx, s.db, gameID, playerID, lockCost, "Failed to lock timeline")
 		http.Error(w, "Failed to lock timeline", http.StatusInternalServerError)
 		return
@@ -268,8 +235,6 @@ func (s *Server) lockTimeline(w http.ResponseWriter, r *http.Request, gameID, pl
 	json.NewEncoder(w).Encode(tm)
 }
 
-// getTimelineStatus returns metadata about a timeline (lock status, stability, etc.)
-// GET /api/games/{gameID}/energy/timeline-status?timeline_id={id}
 func (s *Server) getTimelineStatus(w http.ResponseWriter, r *http.Request, gameID string) {
 	ctx := r.Context()
 
@@ -285,7 +250,6 @@ func (s *Server) getTimelineStatus(w http.ResponseWriter, r *http.Request, gameI
 		return
 	}
 
-	// Verify timeline belongs to this game
 	if tm.GameID != gameID {
 		http.Error(w, "Timeline does not belong to this game", http.StatusForbidden)
 		return
@@ -295,17 +259,12 @@ func (s *Server) getTimelineStatus(w http.ResponseWriter, r *http.Request, gameI
 	json.NewEncoder(w).Encode(tm)
 }
 
-// ===== Energy System Utility Response Types =====
-
-// EnergyStatusResponse includes player energy and timeline info
 type EnergyStatusResponse struct {
 	PlayerEnergy   *models.PlayerEnergy       `json:"player_energy"`
 	AllTimelines   []*models.TimelineMetadata `json:"timelines"`
 	TotalTimelines int                        `json:"total_timelines"`
 }
 
-// getEnergyStatus returns full energy context for a game (all player & timeline info)
-// GET /api/games/{gameID}/energy/status
 func (s *Server) getEnergyStatus(w http.ResponseWriter, r *http.Request, gameID, playerID string) {
 	ctx := r.Context()
 
@@ -331,10 +290,7 @@ func (s *Server) getEnergyStatus(w http.ResponseWriter, r *http.Request, gameID,
 	json.NewEncoder(w).Encode(response)
 }
 
-// isUUID checks if a string looks like a UUID (rough check)
 func isUUID(s string) bool {
-	// UUIDs are typically 36 characters with hyphens (8-4-4-4-12 format)
-	// or 32 characters without hyphens
 	if len(s) == 36 && strings.Count(s, "-") == 4 {
 		return true
 	}

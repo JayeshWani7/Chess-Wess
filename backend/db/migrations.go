@@ -7,7 +7,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// RunMigrations applies all schema migrations in order.
 func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 	migrations := []string{
 		createUsersTable,
@@ -19,7 +18,6 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		alterGamesAddActiveTimeline,
 		createGameNodesTable,
 		createNodeChildrenTable,
-		// Phase 5: Time Mechanics & Energy System
 		createPlayerEnergyTable,
 		createEnergyTransactionsTable,
 		createTimelineMetadataTable,
@@ -68,9 +66,9 @@ CREATE TABLE IF NOT EXISTS games (
   white_player_id UUID REFERENCES users(id),
   black_player_id UUID REFERENCES users(id),
   status          game_status NOT NULL DEFAULT 'pending',
-  time_control    INT NOT NULL DEFAULT 600,  -- seconds per player (0 = unlimited)
+  time_control    INT NOT NULL DEFAULT 600,
   winner_id       UUID REFERENCES users(id),
-  result          VARCHAR(16),               -- 'checkmate','stalemate','timeout','resign','draw'
+  result          VARCHAR(16),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -82,9 +80,9 @@ CREATE TABLE IF NOT EXISTS game_moves (
   game_id     UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
   player_id   UUID NOT NULL REFERENCES users(id),
   move_number INT NOT NULL,
-  move_san    VARCHAR(10) NOT NULL,   -- Standard Algebraic Notation e.g. "e4", "Nf3"
-  move_uci    VARCHAR(6)  NOT NULL,   -- UCI format e.g. "e2e4"
-  fen_after   TEXT NOT NULL,          -- Board state after this move
+  move_san    VARCHAR(10) NOT NULL,
+  move_uci    VARCHAR(6)  NOT NULL,
+  fen_after   TEXT NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (game_id, move_number)
 );
@@ -96,7 +94,7 @@ const createTimelinesTable = `
 CREATE TABLE IF NOT EXISTS timelines (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   game_id       UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-  root_node_id  UUID,  -- Will be set after root node is created
+  root_node_id  UUID,
   timeline_name VARCHAR(64) NOT NULL DEFAULT 'Timeline',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_by_user UUID REFERENCES users(id)
@@ -137,20 +135,19 @@ CREATE TABLE IF NOT EXISTS game_nodes (
   game_id          UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
   timeline_id      UUID NOT NULL REFERENCES timelines(id) ON DELETE CASCADE,
   parent_node_id   UUID REFERENCES game_nodes(id),
-  move_uci         VARCHAR(6),                     -- e2e4 format; NULL if root
-  move_san         VARCHAR(10),                    -- e4 format; NULL if root
-  move_promotion   VARCHAR(1),                     -- q, r, b, n; NULL if no promotion
-  board_state      TEXT NOT NULL,                  -- FEN string
-  turn_number      INT NOT NULL,                   -- 0-based move count
+  move_uci         VARCHAR(6),
+  move_san         VARCHAR(10),
+  move_promotion   VARCHAR(1),
+  board_state      TEXT NOT NULL,
+  turn_number      INT NOT NULL,
   created_by_user  UUID NOT NULL REFERENCES users(id),
-  
-  -- Metadata
+
   is_check         BOOLEAN NOT NULL DEFAULT FALSE,
   is_checkmate     BOOLEAN NOT NULL DEFAULT FALSE,
   is_stalemate     BOOLEAN NOT NULL DEFAULT FALSE,
-  evaluation       INT,                            -- Stockfish score in centipawns (Phase 7)
-  captured_piece   VARCHAR(1),                     -- q, r, b, n, p, k; NULL if no capture
-  
+  evaluation       INT,
+  captured_piece   VARCHAR(1),
+
   created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (timeline_id, turn_number)
 );
@@ -177,7 +174,7 @@ CREATE TABLE IF NOT EXISTS player_energy (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   game_id           UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
   player_id         UUID NOT NULL REFERENCES users(id),
-  energy_remaining  INT NOT NULL DEFAULT 15,      -- Phase 5: Players start with 15 energy
+  energy_remaining  INT NOT NULL DEFAULT 15,
   energy_spent      INT NOT NULL DEFAULT 0,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -208,12 +205,12 @@ CREATE TABLE IF NOT EXISTS timeline_metadata (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   timeline_id           UUID NOT NULL REFERENCES timelines(id) ON DELETE CASCADE,
   game_id               UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
-  locked_by_player_id   UUID REFERENCES users(id),      -- NULL if not locked
+  locked_by_player_id   UUID REFERENCES users(id),
   is_locked             BOOLEAN NOT NULL DEFAULT FALSE,
-  stability_score       INT NOT NULL DEFAULT 100,       -- 0-100, decreases with paradoxes
-  energy_cost_to_create INT NOT NULL DEFAULT 0,         -- Cost in energy to create this timeline
-  paradox_count         INT NOT NULL DEFAULT 0,         -- Number of contradictions detected
-  is_collapsed          BOOLEAN NOT NULL DEFAULT FALSE, -- Marked for deletion in Time Collapse
+  stability_score       INT NOT NULL DEFAULT 100,
+  energy_cost_to_create INT NOT NULL DEFAULT 0,
+  paradox_count         INT NOT NULL DEFAULT 0,
+  is_collapsed          BOOLEAN NOT NULL DEFAULT FALSE,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (timeline_id)
@@ -227,7 +224,6 @@ CREATE INDEX IF NOT EXISTS idx_timeline_metadata_collapsed ON timeline_metadata(
 
 const alterTimelinesAddLocking = `
 DO $$ BEGIN
-  -- Player energy tracking
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='player_energy' AND column_name='energy_remaining') THEN
     CREATE TABLE IF NOT EXISTS player_energy (
       id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -240,8 +236,7 @@ DO $$ BEGIN
       UNIQUE (game_id, player_id)
     );
   END IF;
-  
-  -- Timeline metadata (locking, stability, paradoxes)
+
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='timeline_metadata' AND column_name='is_locked') THEN
     CREATE TABLE IF NOT EXISTS timeline_metadata (
       id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),

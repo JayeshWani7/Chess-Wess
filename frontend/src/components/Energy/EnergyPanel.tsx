@@ -5,10 +5,6 @@ interface EnergyPanelProps {
   className?: string;
 }
 
-/**
- * EnergyPanel displays the current player's energy pool
- * Phase 5: Time Mechanics - shows energy remaining and spent
- */
 export const EnergyPanel: React.FC<EnergyPanelProps> = ({ className = "" }) => {
   const playerEnergy = useGameStore((state) => state.playerEnergy);
 
@@ -16,7 +12,7 @@ export const EnergyPanel: React.FC<EnergyPanelProps> = ({ className = "" }) => {
     return null;
   }
 
-  const energyPercentage = (playerEnergy.energy_remaining / 15) * 100; // Max 15 energy
+  const energyPercentage = (playerEnergy.energy_remaining / 15) * 100;
 
   return (
     <div className={`bg-gray-800 rounded-lg p-4 border border-purple-500 ${className}`}>
@@ -24,8 +20,6 @@ export const EnergyPanel: React.FC<EnergyPanelProps> = ({ className = "" }) => {
         <h3 className="text-sm font-bold text-white">TIME ENERGY</h3>
         <span className="text-xs text-purple-400">Phase 5</span>
       </div>
-
-      {/* Energy Bar */}
       <div className="w-full bg-gray-700 rounded-full h-6 overflow-hidden border border-purple-400 mb-2">
         <div
           className={`h-full transition-all duration-300 ${
@@ -38,8 +32,6 @@ export const EnergyPanel: React.FC<EnergyPanelProps> = ({ className = "" }) => {
           style={{ width: `${energyPercentage}%` }}
         />
       </div>
-
-      {/* Energy Stats */}
       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
         <div className="bg-gray-700 p-2 rounded border border-gray-600">
           <p className="text-gray-400">Remaining</p>
@@ -50,8 +42,6 @@ export const EnergyPanel: React.FC<EnergyPanelProps> = ({ className = "" }) => {
           <p className="text-xl font-bold text-orange-400">{playerEnergy.energy_spent}</p>
         </div>
       </div>
-
-      {/* Energy Cost Info */}
       <div className="bg-gray-900 rounded p-2 text-xs text-gray-300 space-y-1 border border-gray-700">
         <p>💰 <span className="text-cyan-400 font-semibold">Rewind</span>: 1 energy/turn</p>
         <p>🌊 <span className="text-blue-400 font-semibold">Jump Timeline</span>: 1 energy</p>
@@ -61,10 +51,6 @@ export const EnergyPanel: React.FC<EnergyPanelProps> = ({ className = "" }) => {
   );
 };
 
-/**
- * TimelineStatusCard shows metadata for a single timeline
- * Displays: lock status, stability score, paradoxes, collapse status
- */
 interface TimelineStatusCardProps {
   timelineId: string;
   timelineName?: string;
@@ -109,7 +95,6 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
       </div>
 
       <div className="space-y-2 text-xs">
-        {/* Stability Score */}
         <div>
           <div className="flex justify-between mb-1">
             <span className="text-gray-300">Stability</span>
@@ -130,8 +115,6 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
             />
           </div>
         </div>
-
-        {/* Paradox Count & Collapse Status */}
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-gray-700 p-2 rounded">
             <p className="text-gray-400">Paradoxes</p>
@@ -148,8 +131,6 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
             </p>
           </div>
         </div>
-
-        {/* Energy Cost Info */}
         <div className="bg-gray-900 p-2 rounded border border-gray-700">
           <p className="text-gray-400">Energy to Create</p>
           <p className="text-cyan-400 font-bold">{timelineMetadata.energy_cost_to_create}</p>
@@ -159,15 +140,9 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
   );
 };
 
-/**
- * TimelineControlPanel allows locking timelines and viewing timeline health
- * Phase 5: Time Mechanics - Branch Locking
- */
 interface TimelineControlPanelProps {
   onLockTimeline?: (timelineId: string) => void;
   className?: string;
-}
-
 export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
   onLockTimeline,
   className = "",
@@ -186,7 +161,6 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {/* Collapse Warning */}
       {timelinesToCollapse > 0 && (
         <div className="bg-red-900 border border-red-600 rounded p-3">
           <p className="text-sm text-red-200">
@@ -197,8 +171,6 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
           </p>
         </div>
       )}
-
-      {/* Timeline List */}
       <div className="space-y-2">
         {timelines.map((timeline) => {
           const meta = timelineMetadata[timeline.timeline_id];
@@ -225,8 +197,6 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
                   </span>
                 )}
               </div>
-
-              {/* Lock Button */}
               {!meta?.is_locked && !meta?.is_collapsed && onLockTimeline && (
                 <button
                   onClick={() => onLockTimeline(timeline.timeline_id)}
@@ -248,10 +218,6 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
   );
 };
 
-/**
- * OpponentEnergyPanel displays the opponent's energy pool
- * Phase 5: Time Mechanics - shows opponent's energy remaining for bots and players
- */
 interface OpponentEnergyPanelProps {
   opponentName?: string;
   isBot?: boolean;
@@ -271,7 +237,7 @@ export const OpponentEnergyPanel: React.FC<OpponentEnergyPanelProps> = ({
     return null;
   }
 
-  const energyPercentage = (opponentEnergy.energy_remaining / 15) * 100; // Max 15 energy
+  const energyPercentage = (opponentEnergy.energy_remaining / 15) * 100;
 
   const botBadge = isBot ? (
     <span className="text-xs bg-amber-900 text-amber-300 px-2 py-1 rounded font-bold border border-amber-600">
@@ -285,8 +251,6 @@ export const OpponentEnergyPanel: React.FC<OpponentEnergyPanelProps> = ({
         <h3 className="text-sm font-bold text-white">{opponentName.toUpperCase()}</h3>
         <div className="flex gap-2 items-center">{botBadge}</div>
       </div>
-
-      {/* Opponent Energy Bar */}
       <div className="w-full bg-gray-700 rounded-full h-6 overflow-hidden border border-red-400 mb-2">
         <div
           className={`h-full transition-all duration-300 ${
@@ -299,8 +263,6 @@ export const OpponentEnergyPanel: React.FC<OpponentEnergyPanelProps> = ({
           style={{ width: `${energyPercentage}%` }}
         />
       </div>
-
-      {/* Opponent Energy Stats */}
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="bg-gray-700 p-2 rounded border border-gray-600">
           <p className="text-gray-400">Remaining</p>
@@ -315,9 +277,6 @@ export const OpponentEnergyPanel: React.FC<OpponentEnergyPanelProps> = ({
   );
 };
 
-/**
- * EnergyNotification shows warnings when energy is low or actions are blocked
- */
 interface EnergyNotificationProps {
   message: string;
   type: "warning" | "error" | "info";

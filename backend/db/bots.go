@@ -9,13 +9,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// BotDef defines a bot's display name and rating.
 type BotDef struct {
 	Username string
 	Rating   int
 }
 
-// DefaultBots is the list of bots seeded at startup.
 var DefaultBots = []BotDef{
 	{Username: "Bot-400", Rating: 400},
 	{Username: "Bot-600", Rating: 600},
@@ -26,10 +24,7 @@ var DefaultBots = []BotDef{
 	{Username: "Bot-1600", Rating: 1600},
 }
 
-// SeedBots ensures all default bot accounts exist in the database.
-// It is idempotent — safe to call on every startup.
 func SeedBots(ctx context.Context, pool *pgxpool.Pool) error {
-	// Use a fixed password for bots (they never log in via UI)
 	hash, err := bcrypt.GenerateFromPassword([]byte("bot-internal-password-not-for-login"), bcrypt.MinCost)
 	if err != nil {
 		return fmt.Errorf("bcrypt for bots: %w", err)
@@ -42,7 +37,6 @@ func SeedBots(ctx context.Context, pool *pgxpool.Pool) error {
 		).Scan(&existing)
 
 		if err == nil {
-			// Bot already exists — ensure is_bot and rating are correct
 			_, err = pool.Exec(ctx,
 				`UPDATE users SET is_bot = TRUE, rating = $1 WHERE username = $2`,
 				b.Rating, b.Username,
@@ -53,7 +47,6 @@ func SeedBots(ctx context.Context, pool *pgxpool.Pool) error {
 			continue
 		}
 
-		// Insert new bot
 		_, err = pool.Exec(ctx,
 			`INSERT INTO users (username, password_hash, is_bot, rating)
 			 VALUES ($1, $2, TRUE, $3)

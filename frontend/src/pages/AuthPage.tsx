@@ -37,7 +37,6 @@ export default function AuthPage() {
         animate={{ opacity: 1, y: 0 }}
         className="card w-full max-w-sm"
       >
-        {/* Logo */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-chrono-accent tracking-tight">
             ♟ ChessWess
@@ -45,7 +44,6 @@ export default function AuthPage() {
           <p className="text-gray-400 text-sm mt-1">Chess across timelines</p>
         </div>
 
-        {/* Tab switcher */}
         <div className="flex rounded-lg overflow-hidden border border-chrono-border mb-6">
           {(["login", "register"] as Mode[]).map((m) => (
             <button

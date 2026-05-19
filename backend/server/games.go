@@ -11,7 +11,6 @@ import (
 	"github.com/notnil/chess"
 )
 
-// handleGames handles GET /api/games (list open games) and POST /api/games (create game).
 func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -47,8 +46,8 @@ func (s *Server) listGames(w http.ResponseWriter, r *http.Request) {
 }
 
 type createGameRequest struct {
-	TimeControl int    `json:"time_control"` // seconds; 0 = unlimited
-	Color       string `json:"color"`        // "white", "black", "random"
+	TimeControl int    `json:"time_control"`
+	Color       string `json:"color"`
 }
 
 func (s *Server) createGame(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +85,6 @@ func (s *Server) createGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Phase 2: Create initial timeline and root node
 	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID, "Mainline")
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"failed to create timeline: %v"}`, err), http.StatusInternalServerError)
@@ -152,7 +150,6 @@ func (s *Server) getGameMoves(w http.ResponseWriter, r *http.Request, gameID str
 func (s *Server) joinGame(w http.ResponseWriter, r *http.Request, gameID string) {
 	userID := r.Context().Value(userIDKey).(string)
 
-	// Find the game and determine which slot is open
 	var g models.Game
 	err := s.db.QueryRow(r.Context(),
 		`SELECT id, white_player_id, black_player_id, status FROM games WHERE id = $1`, gameID,
@@ -182,7 +179,6 @@ func (s *Server) joinGame(w http.ResponseWriter, r *http.Request, gameID string)
 		return
 	}
 
-	// Notify room via WebSocket hub
 	s.hub.Broadcast(gameID, WSMessage{Type: "player_joined", Payload: map[string]string{"user_id": userID}})
 
 	w.Header().Set("Content-Type", "application/json")
@@ -205,7 +201,6 @@ func (s *Server) resignGame(w http.ResponseWriter, r *http.Request, gameID strin
 		return
 	}
 
-	// Determine winner
 	var winnerID string
 	if g.WhitePlayerID != nil && *g.WhitePlayerID == userID {
 		if g.BlackPlayerID != nil {
@@ -235,18 +230,12 @@ func (s *Server) resignGame(w http.ResponseWriter, r *http.Request, gameID strin
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "resigned"})
 }
 
-// ── Bot game ─────────────────────────────────────────────────────────────────
-
 type createBotGameRequest struct {
-	TimeControl int `json:"time_control"` // seconds; 0 = unlimited
-	BotRating   int `json:"bot_rating"`   // 400, 600, 800, 1000, 1200, 1400, 1600
-	// Color is always "white" for the human player (bot plays black).
-	// Pass color = "black" to play as black (bot plays white).
-	Color string `json:"color"` // "white" | "black"
+	TimeControl int    `json:"time_control"`
+	BotRating   int    `json:"bot_rating"`
+	Color       string `json:"color"`
 }
 
-// handleCreateBotGame creates a game against a bot and immediately starts it.
-// POST /api/games/bot
 func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -267,14 +256,12 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 		req.Color = "white"
 	}
 
-	// Validate bot rating
 	validRatings := map[int]bool{400: true, 600: true, 800: true, 1000: true, 1200: true, 1400: true, 1600: true}
 	if !validRatings[req.BotRating] {
 		http.Error(w, `{"error":"invalid bot_rating; choose 400, 600, 800, 1000, 1200, 1400, or 1600"}`, http.StatusBadRequest)
 		return
 	}
 
-	// Look up the bot user
 	botUsername := botUsernameForRating(req.BotRating)
 	var botID string
 	err := s.db.QueryRow(r.Context(),
@@ -285,22 +272,18 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Assign colors
 	var whiteID, blackID string
 	var botColor string
 	if req.Color == "black" {
-		// Human plays black, bot plays white
 		whiteID = botID
 		blackID = userID
 		botColor = "w"
 	} else {
-		// Human plays white, bot plays black
 		whiteID = userID
 		blackID = botID
 		botColor = "b"
 	}
 
-	// Create the game in 'active' state (both players are known immediately)
 	var g models.Game
 	err = s.db.QueryRow(r.Context(),
 		`INSERT INTO games (white_player_id, black_player_id, status, time_control)
@@ -313,7 +296,6 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Phase 2: Create initial timeline and root node
 	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID, "Mainline")
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"failed to create timeline: %v"}`, err), http.StatusInternalServerError)
@@ -327,13 +309,11 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Phase 5: Initialize energy for both players
 	if err := db.InitPlayerEnergy(r.Context(), s.db, g.ID, whiteID, blackID, 15); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"failed to initialize energy: %v"}`, err), http.StatusInternalServerError)
 		return
 	}
 
-	// Start the bot engine in the background
 	engine := NewBotEngine(s, g.ID, botID, botColor, req.BotRating)
 	go engine.Run(context.Background(), initialFEN)
 
@@ -363,10 +343,6 @@ func botUsernameForRating(rating int) string {
 	}
 }
 
-// ── Game history ──────────────────────────────────────────────────────────────
-
-// listMyGames returns completed games the authenticated user participated in.
-// GET /api/games/history
 func (s *Server) listMyGames(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)

@@ -8,7 +8,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Connect opens a PostgreSQL connection pool.
 func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	if dsn == "" {
 		dsn = "postgres://ChessWess:ChessWess@localhost:5432/ChessWess?sslmode=disable"
@@ -23,7 +22,6 @@ func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// ConnectRedis opens a Redis client.
 func ConnectRedis(url string) (*redis.Client, error) {
 	if url == "" {
 		url = "redis://localhost:6379"

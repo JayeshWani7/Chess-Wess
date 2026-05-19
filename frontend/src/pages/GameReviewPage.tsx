@@ -19,27 +19,24 @@ interface Props {
 export default function GameReviewPage({ game, onBack }: Props) {
   const { token, userId } = useAuthStore();
   const [moves, setMoves] = useState<GameMove[]>([]);
-  const [cursor, setCursor] = useState(-1); // -1 = starting position
+  const [cursor, setCursor] = useState(-1);
   const [loading, setLoading] = useState(true);
   const moveListRef = useRef<HTMLDivElement>(null);
 
-  // Load all moves for this game
   useEffect(() => {
     if (!token) return;
     api.getGameMoves(token, game.id).then((m) => {
       setMoves(m);
-      setCursor(m.length - 1); // start at final position
+      setCursor(m.length - 1);
       setLoading(false);
     });
   }, [token, game.id]);
 
-  // Scroll active move into view
   useEffect(() => {
     const el = moveListRef.current?.querySelector(`[data-idx="${cursor}"]`);
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [cursor]);
 
-  // Keyboard navigation
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "ArrowLeft")  setCursor((c) => Math.max(-1, c - 1));
@@ -51,34 +48,28 @@ export default function GameReviewPage({ game, onBack }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [moves.length]);
 
-  // Build chess position for the current cursor
   const chess = new Chess();
   if (cursor >= 0 && moves.length > 0) {
-    // Load from the FEN stored after the move at cursor
     try {
       chess.load(moves[cursor].fen_after);
     } catch {
-      // fallback: replay from start
       const tmp = new Chess();
       for (let i = 0; i <= cursor; i++) tmp.move(moves[i].move_san);
       chess.load(tmp.fen());
     }
   }
 
-  // Last-move highlight squares
   const lastMoveSquares =
     cursor >= 0
       ? [moves[cursor].move_uci.slice(0, 2), moves[cursor].move_uci.slice(2, 4)]
       : [];
 
-  // Determine board orientation: show from the perspective of the human player
   const flipped =
     game.black_player_id === userId &&
     game.white_player_id !== userId;
   const ranks = flipped ? [...RANKS].reverse() : RANKS;
   const fileOrder = flipped ? [...FILES].reverse() : FILES;
 
-  // Result label
   const resultLabel = (() => {
     const r = game.result;
     if (!r) return "";
@@ -101,7 +92,6 @@ export default function GameReviewPage({ game, onBack }: Props) {
     ? "text-green-400"
     : "text-red-400";
 
-  // Group moves into pairs for the move list
   const pairs: Array<{ num: number; white: GameMove | null; black: GameMove | null; wi: number; bi: number }> = [];
   for (let i = 0; i < moves.length; i += 2) {
     pairs.push({ num: i / 2 + 1, white: moves[i] ?? null, black: moves[i + 1] ?? null, wi: i, bi: i + 1 });
@@ -109,7 +99,6 @@ export default function GameReviewPage({ game, onBack }: Props) {
 
   return (
     <div className="min-h-screen p-4 max-w-5xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <button onClick={onBack} className="btn-ghost text-sm">← Back</button>
         <h1 className="text-xl font-bold text-chrono-accent">♟ Game Review</h1>
@@ -119,7 +108,6 @@ export default function GameReviewPage({ game, onBack }: Props) {
         </div>
       </div>
 
-      {/* Players */}
       <div className="flex items-center justify-between mb-4 px-1">
         <div className="flex items-center gap-2">
           <span className="text-lg">⬜</span>
@@ -133,7 +121,6 @@ export default function GameReviewPage({ game, onBack }: Props) {
       </div>
 
       <div className="flex flex-col lg:flex-row gap-6 items-start justify-center">
-        {/* Board */}
         <div className="flex flex-col items-center gap-2">
           <div className="relative select-none">
             <div
@@ -184,14 +171,12 @@ export default function GameReviewPage({ game, onBack }: Props) {
               )}
             </div>
 
-            {/* File labels */}
             <div className="flex mt-1" style={{ width: "min(80vw, 480px)" }}>
               {fileOrder.map((f) => (
                 <span key={f} className="flex-1 text-center text-xs text-gray-500">{f}</span>
               ))}
             </div>
 
-            {/* Rank labels */}
             <div
               className="absolute top-0 left-0 flex flex-col"
               style={{ height: "min(80vw, 480px)", transform: "translateX(-16px)" }}
@@ -202,7 +187,6 @@ export default function GameReviewPage({ game, onBack }: Props) {
             </div>
           </div>
 
-          {/* Navigation controls */}
           <div className="flex items-center gap-2 mt-1">
             <button
               onClick={() => setCursor(-1)}
@@ -235,7 +219,6 @@ export default function GameReviewPage({ game, onBack }: Props) {
           <p className="text-xs text-gray-600">Use ← → arrow keys to navigate</p>
         </div>
 
-        {/* Move list */}
         <div className="card flex flex-col w-full lg:w-64" style={{ maxHeight: "520px" }}>
           <h3 className="text-sm font-semibold text-gray-400 mb-2 shrink-0">
             Moves · {moves.length} total
@@ -245,7 +228,6 @@ export default function GameReviewPage({ game, onBack }: Props) {
             <p className="text-gray-600 text-xs">Loading…</p>
           ) : (
             <div className="overflow-y-auto flex-1 pr-1" ref={moveListRef}>
-              {/* Header */}
               <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 px-1 mb-1 text-xs text-gray-500 font-semibold uppercase tracking-wide shrink-0">
                 <span>#</span><span>White</span><span>Black</span>
               </div>
@@ -293,7 +275,6 @@ export default function GameReviewPage({ game, onBack }: Props) {
             </div>
           )}
 
-          {/* Result footer */}
           {!loading && game.result && (
             <div className="mt-3 pt-3 border-t border-chrono-border text-center text-xs text-gray-500 shrink-0">
               {resultLabel}

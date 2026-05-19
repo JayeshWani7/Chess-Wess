@@ -60,7 +60,6 @@ export interface TimelineData {
   nodes_partial?: boolean;
 }
 
-// Phase 5: Energy System Types
 export interface PlayerEnergy {
   id: string;
   game_id: string;
@@ -77,7 +76,7 @@ export interface TimelineMetadata {
   game_id: string;
   locked_by_player_id?: string | null;
   is_locked: boolean;
-  stability_score: number; // 0-100
+  stability_score: number;
   energy_cost_to_create: number;
   paradox_count: number;
   is_collapsed: boolean;
@@ -86,7 +85,6 @@ export interface TimelineMetadata {
 }
 
 interface GameState {
-  // Active game
   activeGameId: string | null;
   gameInfo: GameInfo | null;
   chess: Chess;
@@ -95,16 +93,13 @@ interface GameState {
   legalMoves: string[];
   playerColor: "w" | "b" | null;
 
-  // Timers (seconds remaining)
   whiteTime: number;
   blackTime: number;
 
-  // Status
   status: GameStatus;
   result: GameResult;
   winnerId: string | null;
 
-  // Timeline state
   timelines: TimelineData[];
   nodesById: Record<string, TimelineNode>;
   nodesByTimeline: Record<string, TimelineNode[]>;
@@ -112,12 +107,10 @@ interface GameState {
   activeTimelineLatestNodeId: string | null;
   selectedTimelineNodeId: string | null;
 
-  // Phase 5: Energy System
   playerEnergy: PlayerEnergy | null;
   opponentEnergy: PlayerEnergy | null;
-  timelineMetadata: Record<string, TimelineMetadata>; // keyed by timeline_id
+  timelineMetadata: Record<string, TimelineMetadata>;
 
-  // Actions
   setActiveGame: (gameId: string, info: GameInfo, color: "w" | "b") => void;
   loadMoves: (moves: GameMove[]) => void;
   applyMove: (move: Move, fen: string) => void;
@@ -130,7 +123,6 @@ interface GameState {
   setGameOver: (result: GameResult, winnerId: string | null) => void;
   setPlayerColor: (color: "w" | "b" | null) => void;
   leaveGame: () => void;
-  // Phase 5 actions
   setPlayerEnergy: (energy: PlayerEnergy) => void;
   setOpponentEnergy: (energy: PlayerEnergy | null) => void;
   setTimelineMetadata: (metadata: TimelineMetadata[]) => void;
@@ -176,7 +168,6 @@ export const useGameStore = create<GameState>()((set, get) => ({
   activeTimelineId: null,
   activeTimelineLatestNodeId: null,
   selectedTimelineNodeId: null,
-  // Phase 5 state
   playerEnergy: null,
   opponentEnergy: null,
   timelineMetadata: {},
@@ -221,8 +212,6 @@ export const useGameStore = create<GameState>()((set, get) => ({
     const applied = chess.move(move);
     if (!applied) return;
 
-    // Create a new Chess instance from the resulting FEN so that
-    // any useEffect depending on the `chess` reference will re-fire.
     const nextFen = fen || chess.fen();
     const newChess = new Chess(nextFen);
 
@@ -324,21 +313,18 @@ export const useGameStore = create<GameState>()((set, get) => ({
       return;
     }
 
-    // If a square is already selected, try to make a move
     if (selectedSquare && selectedSquare !== square) {
       const piece = chess.get(selectedSquare as Parameters<typeof chess.get>[0]);
       if (piece && piece.color === playerColor) {
         const moves = chess.moves({ square: selectedSquare as Parameters<typeof chess.moves>[0]["square"], verbose: true });
         const target = moves.find((m) => m.to === square);
         if (target) {
-          // Move will be handled by the component (needs promotion check)
           set({ selectedSquare: square, legalMoves: [] });
           return;
         }
       }
     }
 
-    // Select the square and compute legal moves
     const piece = chess.get(square as Parameters<typeof chess.get>[0]);
     if (piece && piece.color === playerColor && chess.turn() === playerColor) {
       const moves = chess.moves({ square: square as Parameters<typeof chess.moves>[0]["square"], verbose: true });
@@ -381,7 +367,6 @@ export const useGameStore = create<GameState>()((set, get) => ({
       timelineMetadata: {},
     }),
 
-  // Phase 5: Energy Management Actions
   setPlayerEnergy: (energy) => set({ playerEnergy: energy }),
 
   setOpponentEnergy: (energy) => set({ opponentEnergy: energy }),

@@ -16,12 +16,9 @@ import (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// Allow all origins in development; restrict in production.
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-// handleWebSocket upgrades the connection and registers the client with the hub.
-// Query params: token (JWT), game_id
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	token := extractToken(r)
 	if token == "" {
@@ -57,17 +54,14 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.hub.join <- client
 	go client.writePump()
 
-	// Announce presence
 	s.hub.Broadcast(gameID, WSMessage{
 		Type:    "player_connected",
 		Payload: map[string]string{"user_id": userID},
 	})
 
-	// Read loop — blocks until client disconnects
 	s.readPump(client)
 }
 
-// readPump reads incoming messages from the client and dispatches them.
 func (s *Server) readPump(c *Client) {
 	defer func() {
 		s.hub.leave <- c
@@ -99,15 +93,12 @@ func (s *Server) readPump(c *Client) {
 		case "ping":
 			c.send <- mustMarshal(WSMessage{Type: "pong"})
 		case "pong":
-			// Ignore pong messages (keepalive response from client)
 		default:
 			log.Printf("ws: unknown message type %q from %s", msg.Type, c.userID)
 		}
 	}
 }
 
-// handleMoveMessage processes a chess move sent over WebSocket.
-// Expected payload: { "uci": "e2e4", "san": "e4", "fen": "<fen after move>" }
 func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	payload, ok := msg.Payload.(map[string]interface{})
 	if !ok {
@@ -127,13 +118,11 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 
 	ctx := context.Background()
 
-	// Extract promotion piece from UCI if present (e2e8q format)
 	promotion := ""
 	if len(uci) > 4 {
 		promotion = string(uci[4])
 	}
 
-	// Persist the move (legacy game_moves for backwards compatibility)
 	var moveID string
 	err := s.db.QueryRow(
 		ctx,
@@ -150,7 +139,6 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 		return
 	}
 
-	// Phase 2: Create game node for timeline system
 	_, err = s.createGameNode(ctx, c.gameID, c.userID, uci, san, promotion, fen, timelineID, parentNodeID)
 	if err != nil {
 		log.Printf("ws: failed to create game node: %v", err)
@@ -181,7 +169,6 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 		}
 	}
 
-	// Broadcast the move to all players in the room
 	s.hub.Broadcast(c.gameID, WSMessage{
 		Type: "move",
 		Payload: map[string]interface{}{
@@ -210,8 +197,6 @@ func outcomeFromFEN(fen string) (string, bool) {
 	return "", false
 }
 
-// createGameNode creates a game node for the timeline system.
-// If timelineID or parentNodeID are empty, they are resolved from the latest node.
 func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, promotion, fen, timelineID, parentNodeID string) (string, error) {
 	var parentNode *models.GameNode
 
@@ -255,32 +240,24 @@ func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, p
 		parentNode = latest
 	}
 
-	// Get metadata from the board position
 	var isCheck, isCheckmate, isStalemate bool
 
-	// Parse the new position to determine game state
 	fenOpt, err := chess.FEN(fen)
 	if err == nil {
 		game := chess.NewGame(fenOpt)
 		pos := game.Position()
 		status := pos.Status()
 
-		// Determine game state from status
 		isCheckmate = status == chess.Checkmate
 		isStalemate = status == chess.Stalemate
 
-		// Check if in check: has valid moves but is checkmate, or use opponent's perspective
-		// If checkmate, it's also in check. If stalemate, it's not in check.
 		if isCheckmate {
 			isCheck = true
 		} else if !isStalemate && status == chess.NoMethod {
-			// If no moves are valid and it's not checkmate/stalemate, something is wrong
-			// For now, assume check if there are no valid moves but not checkmate/stalemate
 			isCheck = len(game.ValidMoves()) == 0
 		}
 	}
 
-	// Create the node
 	resolvedParentID := parentNode.ID
 	nodeData := &models.GameNode{
 		GameID:        gameID,
@@ -300,8 +277,6 @@ func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, p
 	return db.CreateNode(ctx, s.db, nodeData, resolvedParentID)
 }
 
-// handleRewindMessage creates a new timeline branching from a prior node.
-// Expected payload: { "node_id": "<target_node_id>" }
 func (s *Server) handleRewindMessage(c *Client, msg WSMessage) {
 	payload, ok := msg.Payload.(map[string]interface{})
 	if !ok {
@@ -355,8 +330,6 @@ func (s *Server) handleRewindMessage(c *Client, msg WSMessage) {
 	})
 }
 
-// handleSwitchTimelineMessage sets the active timeline for the game.
-// Expected payload: { "timeline_id": "<timeline_id>" }
 func (s *Server) handleSwitchTimelineMessage(c *Client, msg WSMessage) {
 	payload, ok := msg.Payload.(map[string]interface{})
 	if !ok {

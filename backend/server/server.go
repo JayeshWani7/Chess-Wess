@@ -7,15 +7,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Server holds shared dependencies and implements http.Handler.
 type Server struct {
-	db   *pgxpool.Pool
-	rdb  *redis.Client
-	hub  *Hub
-	mux  *http.ServeMux
+	db  *pgxpool.Pool
+	rdb *redis.Client
+	hub *Hub
+	mux *http.ServeMux
 }
 
-// New creates a configured Server.
 func New(pool *pgxpool.Pool, rdb *redis.Client) *Server {
 	s := &Server{
 		db:  pool,

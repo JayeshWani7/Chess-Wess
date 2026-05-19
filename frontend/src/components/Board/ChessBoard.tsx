@@ -13,7 +13,6 @@ function buildBoardMatrix(flipped: boolean) {
   return { ranks, files };
 }
 
-// Promotion piece options shown in the picker
 const PROMO_PIECES: { piece: "q" | "r" | "b" | "n"; label: string; white: string; black: string }[] = [
   { piece: "q", label: "Queen",  white: "♕", black: "♛" },
   { piece: "r", label: "Rook",   white: "♖", black: "♜" },
@@ -43,7 +42,6 @@ export default function ChessBoard() {
   const applyMove = useGameStore((s) => s.applyMove);
   const userId = useAuthStore((s) => s.userId);
 
-  // Pending promotion: set when a pawn reaches the back rank
   const [pendingPromo, setPendingPromo] = useState<PendingPromotion | null>(null);
 
   const flipped = gameInfo && userId
@@ -51,16 +49,13 @@ export default function ChessBoard() {
     : playerColor === "b";
   const { ranks, files } = buildBoardMatrix(flipped);
 
-  // Last move squares for highlighting
   const lastMove = moves[moves.length - 1];
   const lastMoveSquares = lastMove
     ? [lastMove.moveUci.slice(0, 2), lastMove.moveUci.slice(2, 4)]
     : [];
 
-  // Commit a move (with optional promotion piece)
   const commitMove = useCallback(
     (from: string, to: string, promotion?: "q" | "r" | "b" | "n") => {
-      // Temporarily apply to get SAN + FEN, then undo so applyMove re-applies
       const move = chess.move({ from, to, promotion });
       if (!move) return;
       const fen = chess.fen();
@@ -83,7 +78,7 @@ export default function ChessBoard() {
     (square: string) => {
       if (status !== "active") return;
       if (chess.turn() !== playerColor) return;
-      if (pendingPromo) return; // ignore clicks while picker is open
+      if (pendingPromo) return;
 
       if (selectedSquare && legalMoves.includes(square)) {
         const piece = chess.get(selectedSquare as Parameters<typeof chess.get>[0]);
@@ -94,7 +89,6 @@ export default function ChessBoard() {
             (playerColor === "b" && square[1] === "1"));
 
         if (isPromotion) {
-          // Show picker instead of auto-queening
           setPendingPromo({ from: selectedSquare, to: square });
           return;
         }
@@ -121,7 +115,6 @@ export default function ChessBoard() {
 
   return (
     <div className="relative select-none">
-      {/* Board grid */}
       <div
         className="grid border-2 border-chrono-border rounded-sm overflow-hidden shadow-2xl"
         style={{
@@ -158,7 +151,6 @@ export default function ChessBoard() {
         )}
       </div>
 
-      {/* File labels */}
       <div className="flex mt-1" style={{ width: "min(80vw, 560px)" }}>
         {files.map((f) => (
           <span key={f} className="flex-1 text-center text-xs text-gray-500">
@@ -167,7 +159,6 @@ export default function ChessBoard() {
         ))}
       </div>
 
-      {/* Rank labels */}
       <div
         className="absolute top-0 left-0 flex flex-col"
         style={{ height: "min(80vw, 560px)", transform: "translateX(-16px)" }}
@@ -179,7 +170,6 @@ export default function ChessBoard() {
         ))}
       </div>
 
-      {/* Promotion picker overlay */}
       {pendingPromo && (
         <div
           className="absolute inset-0 bg-black/60 flex items-center justify-center z-20 rounded-sm"

@@ -1,16 +1,5 @@
 package server
 
-// Bot engine: plays chess moves with strength scaled to rating.
-//
-// Rating tiers and strategy:
-//   400  - fully random legal move
-//   600  - random, but prefers captures (30% of the time)
-//   800  - always captures when available, otherwise random
-//   1000 - 1-ply material evaluation
-//   1200 - 1-ply with basic positional bonuses
-//   1400 - 2-ply minimax with alpha-beta pruning
-//   1600 - 3-ply minimax with alpha-beta pruning
-
 import (
 	"context"
 	"encoding/json"
@@ -24,7 +13,6 @@ import (
 	"github.com/notnil/chess"
 )
 
-// pieceValues maps piece type to centipawn value.
 var pieceValues = map[chess.PieceType]int{
 	chess.Pawn:   100,
 	chess.Knight: 320,
@@ -34,7 +22,6 @@ var pieceValues = map[chess.PieceType]int{
 	chess.King:   20000,
 }
 
-// BotEngine drives a bot player for a single game.
 type BotEngine struct {
 	server    *Server
 	gameID    string
@@ -43,7 +30,6 @@ type BotEngine struct {
 	rating    int
 }
 
-// NewBotEngine creates a bot engine for the given game.
 func NewBotEngine(s *Server, gameID, botUserID, botColorStr string, rating int) *BotEngine {
 	color := chess.White
 	if botColorStr == "b" {
@@ -58,8 +44,6 @@ func NewBotEngine(s *Server, gameID, botUserID, botColorStr string, rating int) 
 	}
 }
 
-// Run subscribes to the game's hub room and plays moves whenever it is the
-// bot's turn. It exits when the game ends or ctx is cancelled.
 func (b *BotEngine) Run(ctx context.Context, initialFEN string) {
 	incoming := make(chan []byte, 64)
 	client := &Client{
@@ -204,7 +188,6 @@ func (b *BotEngine) playMove(ctx context.Context, game *chess.Game) {
 		},
 	})
 
-	// Phase 5: Bot strategic energy usage - lock favorable timelines based on rating
 	b.maybeUseEnergyToLock(ctx, game)
 
 	outcome := game.Outcome()
@@ -251,49 +234,38 @@ func (b *BotEngine) outcomeWinner(outcome chess.Outcome) string {
 	}
 }
 
-// maybeUseEnergyToLock strategically locks timelines when bot is winning (based on rating)
-// Phase 5: Bots use energy to prevent opponents from rewinding favorable positions
-// Higher-rated bots are more aggressive about locking timelines
 func (b *BotEngine) maybeUseEnergyToLock(ctx context.Context, game *chess.Game) {
-	// Only try to lock if rating is 1000+ (weaker bots don't strategize this way)
 	if b.rating < 1000 {
 		return
 	}
 
-	// Evaluate the position from bot's perspective
 	eval := b.evaluateGame(game, true)
 
-	// Determine locking threshold based on rating
-	// Higher rating = more aggressive locking (lower threshold)
 	var lockThreshold float64
 	switch {
 	case b.rating <= 1000:
-		lockThreshold = 300 // Only lock if winning big
+		lockThreshold = 300
 	case b.rating <= 1200:
 		lockThreshold = 200
 	case b.rating <= 1400:
 		lockThreshold = 100
 	default:
-		lockThreshold = 50 // Even small advantage warrants locking
+		lockThreshold = 50
 	}
 
-	// Flip evaluation if bot is Black (negative eval means winning)
 	if b.botColor == chess.Black {
 		eval = -eval
 	}
 
-	// Only lock if winning substantially
 	if eval < lockThreshold {
 		return
 	}
 
-	// Also check probability based on rating (higher rating = more willing to lock)
-	lockProbability := float64(b.rating-1000) / 700.0 // scales from 0 to ~1
+	lockProbability := float64(b.rating-1000) / 700.0
 	if rand.Float64() > lockProbability {
 		return
 	}
 
-	// Get the active timeline and lock it
 	var timelineID string
 	err := b.server.db.QueryRow(ctx,
 		`SELECT active_timeline_id FROM games WHERE id = $1`,
@@ -303,24 +275,19 @@ func (b *BotEngine) maybeUseEnergyToLock(ctx context.Context, game *chess.Game) 
 		return
 	}
 
-	// Check if bot has enough energy
 	botEnergy, err := db.GetPlayerEnergy(ctx, b.server.db, b.gameID, b.botUserID)
 	if err != nil || botEnergy.EnergyRemaining < 3 {
-		return // Need 3 energy to lock
+		return
 	}
 
-	// Lock the timeline
 	err = db.LockTimeline(ctx, b.server.db, timelineID, b.botUserID)
 	if err != nil {
-		return // Silently fail if lock doesn't work
+		return
 	}
 
-	// Spend the energy
 	_ = db.SpendEnergy(ctx, b.server.db, b.gameID, b.botUserID, 3, "lock_timeline",
 		"Bot "+string(rune(b.rating))+" locked favorable position")
 }
-
-// Move selection strategies
 
 func randomMove(moves []*chess.Move) *chess.Move {
 	return moves[rand.Intn(len(moves))]
@@ -381,7 +348,6 @@ func (b *BotEngine) minimaxMove(game *chess.Game, depth int) *chess.Move {
 	if len(moves) == 0 {
 		return nil
 	}
-	// Order moves: captures and checks first for better alpha-beta pruning
 	moves = orderMoves(game, moves)
 
 	maximizing := b.botColor == chess.White
@@ -419,22 +385,17 @@ func (b *BotEngine) minimaxMove(game *chess.Game, depth int) *chess.Move {
 }
 
 func (b *BotEngine) alphaBeta(game *chess.Game, depth int, alpha, beta float64, maximizing bool) float64 {
-	// Check terminal state AFTER the move that led here has already been applied.
-	// pos.Status() returns Checkmate, Stalemate, or NoMethod.
 	pos := game.Position()
 	status := pos.Status()
 	if status == chess.Checkmate {
-		// The side to move is checkmated — the side that just moved wins.
-		// Prefer shorter mates by subtracting remaining depth from the score.
 		if pos.Turn() == chess.White {
-			return -mateScore + float64(100-depth) // white is mated → black wins
+			return -mateScore + float64(100-depth)
 		}
-		return mateScore - float64(100-depth) // black is mated → white wins
+		return mateScore - float64(100-depth)
 	}
 	if status == chess.Stalemate {
 		return 0
 	}
-	// Also check game outcome (handles draws by repetition, 50-move rule, etc.)
 	outcome := game.Outcome()
 	if outcome != chess.NoOutcome {
 		return terminalScore(outcome, depth)
@@ -444,7 +405,7 @@ func (b *BotEngine) alphaBeta(game *chess.Game, depth int, alpha, beta float64, 
 	}
 	moves := game.ValidMoves()
 	if len(moves) == 0 {
-		return 0 // shouldn't happen after status check, but be safe
+		return 0
 	}
 	moves = orderMoves(game, moves)
 	if maximizing {
@@ -477,36 +438,27 @@ func (b *BotEngine) alphaBeta(game *chess.Game, depth int, alpha, beta float64, 
 	return val
 }
 
-// mateScore is the value assigned to a checkmate position.
-// It's large enough to always outweigh any material score.
-// Subtracting depth rewards finding checkmate in fewer moves.
 const mateScore = 1_000_000.0
 
-// terminalScore returns the score for a finished game.
-// depth is the remaining depth — higher remaining depth means the mate was
-// found sooner (fewer moves away), so we reward that.
 func terminalScore(outcome chess.Outcome, depth int) float64 {
 	switch outcome {
 	case chess.WhiteWon:
-		return mateScore - float64(100-depth) // white wins: large positive, prefer faster
+		return mateScore - float64(100-depth)
 	case chess.BlackWon:
-		return -mateScore + float64(100-depth) // black wins: large negative
+		return -mateScore + float64(100-depth)
 	default:
-		return 0 // draw
+		return 0
 	}
 }
 
-// evaluateGame scores a position after a move has been applied to g.
-// It handles terminal states (checkmate/stalemate) before falling back
-// to the material+positional heuristic.
 func (b *BotEngine) evaluateGame(g *chess.Game, positional bool) float64 {
 	pos := g.Position()
 	status := pos.Status()
 	if status == chess.Checkmate {
 		if pos.Turn() == chess.White {
-			return -mateScore // white is mated → black wins
+			return -mateScore
 		}
-		return mateScore // black is mated → white wins
+		return mateScore
 	}
 	if status == chess.Stalemate {
 		return 0
@@ -518,8 +470,6 @@ func (b *BotEngine) evaluateGame(g *chess.Game, positional bool) float64 {
 	return b.evaluate(pos, positional)
 }
 
-// evaluate returns a material + positional score from White's perspective.
-// Does NOT handle terminal positions — use evaluateGame for that.
 func (b *BotEngine) evaluate(pos *chess.Position, positional bool) float64 {
 	score := 0
 	board := pos.Board()
@@ -538,11 +488,7 @@ func (b *BotEngine) evaluate(pos *chess.Position, positional bool) float64 {
 			score += positionalBonus(piece, sq)
 		}
 	}
-	// Small bonus for putting the opponent in check.
-	// The Check MoveTag is already rewarded in orderMoves; here we add a
-	// small static bonus when the side to move is in check (bad for them).
 	if positional && pos.Status() == chess.Checkmate {
-		// Already handled by evaluateGame — shouldn't reach here, but be safe.
 		if pos.Turn() == chess.White {
 			return -mateScore
 		}
@@ -551,8 +497,6 @@ func (b *BotEngine) evaluate(pos *chess.Position, positional bool) float64 {
 	return float64(score)
 }
 
-// orderMoves sorts moves to improve alpha-beta pruning efficiency.
-// Priority: checkmate > captures (MVV-LVA) > checks > quiet moves.
 func orderMoves(game *chess.Game, moves []*chess.Move) []*chess.Move {
 	type scored struct {
 		m     *chess.Move
@@ -562,10 +506,7 @@ func orderMoves(game *chess.Game, moves []*chess.Move) []*chess.Move {
 	for _, m := range moves {
 		s := 0
 		if m.HasTag(chess.Capture) {
-			// Most Valuable Victim - Least Valuable Attacker
 			victim := pieceValues[m.Promo()]
-			// notnil/chess doesn't expose the captured piece type directly on the move,
-			// so we use a flat capture bonus and rely on the search to sort out value
 			s += 1000 + victim
 		}
 		if m.HasTag(chess.Check) {
@@ -576,7 +517,6 @@ func orderMoves(game *chess.Game, moves []*chess.Move) []*chess.Move {
 		}
 		ss = append(ss, scored{m, s})
 	}
-	// Simple insertion sort (move lists are small, ≤ ~35 moves)
 	for i := 1; i < len(ss); i++ {
 		for j := i; j > 0 && ss[j].score > ss[j-1].score; j-- {
 			ss[j], ss[j-1] = ss[j-1], ss[j]
@@ -641,11 +581,10 @@ func outcomeToResult(outcome chess.Outcome, method chess.Method) string {
 	return "checkmate"
 }
 
-// nullConn is a no-op WebSocket connection used by the bot's virtual client.
 type nullConn struct{}
 
 func (n *nullConn) ReadMessage() (int, []byte, error) {
-	select {} // block forever
+	select {}
 }
 func (n *nullConn) WriteMessage(_ int, _ []byte) error { return nil }
 func (n *nullConn) Close() error                       { return nil }

@@ -5,13 +5,10 @@ export default function MoveHistory() {
   const moves = useGameStore((s) => s.moves);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to the latest move
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [moves.length]);
 
-  // Group flat move list into pairs: [[white, black?], ...]
-  // move_number is 1-based and alternates w/b, so pair index = Math.ceil(n/2) - 1
   const pairs: Array<{ moveNum: number; white: string; black: string | null }> = [];
   for (let i = 0; i < moves.length; i += 2) {
     pairs.push({
@@ -21,7 +18,7 @@ export default function MoveHistory() {
     });
   }
 
-  const lastMoveIndex = moves.length - 1; // 0-based index of the last move
+  const lastMoveIndex = moves.length - 1;
 
   return (
     <div className="card flex flex-col min-h-0" style={{ maxHeight: "320px" }}>
@@ -31,7 +28,6 @@ export default function MoveHistory() {
         <p className="text-gray-600 text-xs">No moves yet</p>
       ) : (
         <div className="overflow-y-auto flex-1 pr-1">
-          {/* Header row */}
           <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 px-1 mb-1 text-xs text-gray-500 font-semibold uppercase tracking-wide">
             <span>#</span>
             <span>White</span>
@@ -40,7 +36,6 @@ export default function MoveHistory() {
 
           <div className="space-y-0.5 font-mono text-sm">
             {pairs.map(({ moveNum, white, black }, pairIdx) => {
-              // Flat indices: white = pairIdx*2, black = pairIdx*2+1
               const whiteIdx = pairIdx * 2;
               const blackIdx = pairIdx * 2 + 1;
               const whiteIsLast = whiteIdx === lastMoveIndex;
@@ -77,7 +72,6 @@ export default function MoveHistory() {
             })}
           </div>
 
-          {/* Scroll anchor */}
           <div ref={bottomRef} />
         </div>
       )}

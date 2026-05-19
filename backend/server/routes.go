@@ -6,7 +6,6 @@ import (
 )
 
 func (s *Server) routes() {
-	// CORS middleware wraps all routes
 	s.mux.Handle("/api/auth/register", cors(http.HandlerFunc(s.handleRegister)))
 	s.mux.Handle("/api/auth/login", cors(http.HandlerFunc(s.handleLogin)))
 
@@ -17,20 +16,16 @@ func (s *Server) routes() {
 
 	s.mux.Handle("/api/users/", cors(s.requireAuth(http.HandlerFunc(s.handleGetUser))))
 
-	// Phase 2: Timeline/Replay endpoints
 	s.mux.Handle("/api/nodes/", cors(s.requireAuth(http.HandlerFunc(s.handleNodeRoutes))))
 
-	// WebSocket endpoint — auth via query param token
 	s.mux.Handle("/ws", cors(http.HandlerFunc(s.handleWebSocket)))
 
-	// Health check
 	s.mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 }
 
-// handleGameRoutes routes /api/games/{id}/* endpoints
 func (s *Server) handleGameRoutes(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/games/"), "/")
 	gameID := parts[0]
@@ -61,7 +56,6 @@ func (s *Server) handleGameRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleNodeRoutes routes /api/nodes/{id}/* endpoints
 func (s *Server) handleNodeRoutes(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/nodes/"), "/")
 	nodeID := parts[0]

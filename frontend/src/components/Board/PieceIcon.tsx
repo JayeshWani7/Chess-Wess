@@ -1,6 +1,5 @@
 import type { Piece } from "chess.js";
 
-// Unicode chess pieces — clean, no external assets needed
 const PIECES: Record<string, string> = {
   wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
   bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
@@ -18,7 +17,6 @@ export default function PieceIcon({ piece }: PieceIconProps) {
     <span
       className="text-4xl leading-none select-none"
       style={{
-        // Pieces need contrast on both light and dark squares
         WebkitTextStroke: piece.color === "w" ? "0.5px #333" : "1px #000",
         textShadow:
           piece.color === "w"

@@ -141,5 +141,4 @@ class ChessWSClient {
   }
 }
 
-// Singleton — one connection at a time
 export const wsClient = new ChessWSClient();

@@ -13,8 +13,6 @@ type contextKey string
 
 const userIDKey contextKey = "userID"
 
-// cors adds permissive CORS headers for development.
-// In production, restrict AllowedOrigins to your domain.
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -28,7 +26,6 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
-// requireAuth validates the JWT Bearer token and injects the userID into context.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := extractToken(r)
@@ -47,12 +44,10 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 }
 
 func extractToken(r *http.Request) string {
-	// Check Authorization header first
 	auth := r.Header.Get("Authorization")
 	if strings.HasPrefix(auth, "Bearer ") {
 		return strings.TrimPrefix(auth, "Bearer ")
 	}
-	// Fall back to query param (used for WebSocket)
 	return r.URL.Query().Get("token")
 }
 

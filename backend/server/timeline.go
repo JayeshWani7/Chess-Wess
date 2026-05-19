@@ -10,7 +10,6 @@ import (
 	"github.com/ChessWess/backend/models"
 )
 
-// handleGameTimeline handles GET /api/games/{id}/timeline — returns the game's timeline tree.
 func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/games/"), "/")
 	if len(parts) < 2 {
@@ -68,7 +67,6 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all timelines for this game
 	timelines, err := db.GetGameTimelines(r.Context(), s.db, gameID)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
@@ -81,7 +79,6 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For each timeline, get nodes (optionally windowed)
 	var nodeLimit int
 	if rawLimit := r.URL.Query().Get("node_limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
@@ -139,8 +136,6 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleGameReplay handles GET /api/games/{id}/replay — returns the node path for replay.
-// Query param: ?node_id={nodeID} to get path up to that node (defaults to latest).
 func (s *Server) handleGameReplay(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/games/"), "/")
 	if len(parts) < 2 {
@@ -156,7 +151,6 @@ func (s *Server) handleGameReplay(w http.ResponseWriter, r *http.Request) {
 
 	nodeID := r.URL.Query().Get("node_id")
 
-	// If no node_id provided, get the latest node in the active timeline
 	if nodeID == "" {
 		timelineID, err := db.GetActiveTimelineID(r.Context(), s.db, gameID)
 		if err != nil {
@@ -180,7 +174,6 @@ func (s *Server) handleGameReplay(w http.ResponseWriter, r *http.Request) {
 		nodeID = latest.ID
 	}
 
-	// Get path from root to target node
 	path, err := db.GetNodePath(r.Context(), s.db, nodeID)
 	if err != nil {
 		http.Error(w, `{"error":"node not found"}`, http.StatusNotFound)
@@ -191,7 +184,6 @@ func (s *Server) handleGameReplay(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(path)
 }
 
-// handleActiveTimeline handles GET/POST /api/games/{id}/timeline/active
 func (s *Server) handleActiveTimeline(w http.ResponseWriter, r *http.Request, gameID string) {
 	switch r.Method {
 	case http.MethodGet:
@@ -234,7 +226,6 @@ func (s *Server) handleActiveTimeline(w http.ResponseWriter, r *http.Request, ga
 	}
 }
 
-// handleNodeBranches handles GET /api/nodes/{id}/branches — returns children of a node.
 func (s *Server) handleNodeBranches(w http.ResponseWriter, r *http.Request, nodeID string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)

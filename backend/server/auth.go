@@ -26,7 +26,6 @@ type authResponse struct {
 	Username string `json:"username"`
 }
 
-// handleRegister creates a new user account.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -59,7 +58,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		req.Username, string(hash),
 	).Scan(&userID)
 	if err != nil {
-		// Likely unique constraint violation
 		http.Error(w, `{"error":"username already taken"}`, http.StatusConflict)
 		return
 	}
@@ -75,7 +73,6 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(authResponse{Token: token, UserID: userID, Username: req.Username})
 }
 
-// handleLogin authenticates an existing user.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
@@ -123,8 +120,6 @@ func issueJWT(userID string) (string, error) {
 	return token.SignedString([]byte(jwtSecret()))
 }
 
-// handleGetUser returns public info for a user by ID.
-// GET /api/users/{id}
 func (s *Server) handleGetUser(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)

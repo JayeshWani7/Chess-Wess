@@ -59,18 +59,15 @@ export default function GamePage() {
       const data = await api.getGameTimeline(token, activeGameId, limit);
       setTimelineData(data.timelines, data.active_timeline_id ?? null);
     } catch {
-      // Timeline data is optional for basic play; ignore errors for now.
     }
   }, [token, activeGameId, setTimelineData]);
 
-  // Connect WebSocket and load existing moves on mount
   useEffect(() => {
     if (!activeGameId || !token || connectedRef.current) return;
     connectedRef.current = true;
 
     wsClient.connect(activeGameId, token);
 
-    // Load move history from REST (handles page refresh / late join)
     api.getGameMoves(token, activeGameId).then((moves) => {
       loadMoves(
         moves.map((m) => ({
@@ -88,7 +85,6 @@ export default function GamePage() {
 
     refreshTimeline();
 
-    // Subscribe to WebSocket messages
     const unsub = wsClient.onMessage((msg: WSMessage) => {
       switch (msg.type) {
         case "move": {
@@ -99,7 +95,6 @@ export default function GamePage() {
             san: string;
             fen: string;
           };
-          // Only apply moves from the opponent (our own moves are applied optimistically)
           if (p.player_id !== userId) {
             const from = p.uci.slice(0, 2);
             const to = p.uci.slice(2, 4);
@@ -150,7 +145,6 @@ export default function GamePage() {
     };
   }, [activeGameId, token, userId, loadMoves, applyMove, setGameOver, refreshTimeline]);
 
-  // Resolve opponent display name (handles bots like "Bot-800")
   useEffect(() => {
     if (!gameInfo || !userId || !token) return;
     const expectedColor = gameInfo.black_player_id === userId ? "b" : "w";
@@ -171,7 +165,6 @@ export default function GamePage() {
       })
       .catch(() => setOpponentName("Opponent"));
 
-    // Fetch player energy for both players
     Promise.all([
       api.getPlayerEnergy(token, gameInfo.id),
       api.getOpponentEnergy(token, gameInfo.id, oppId),
@@ -181,16 +174,13 @@ export default function GamePage() {
         setOpponentEnergy(opponentEnergy);
       })
       .catch(() => {
-        // Energy fetch is optional
       });
   }, [gameInfo, userId, token, setPlayerColor, setPlayerEnergy, setOpponentEnergy]);
 
-  // Detect checkmate / stalemate / draw locally after every move
-  // (chess is a new instance after each applyMove, so this effect re-fires correctly)
   useEffect(() => {
     if (status !== "active") return;
     if (chess.isCheckmate()) {
-      const loserColor = chess.turn(); // side to move is the one in checkmate
+      const loserColor = chess.turn();
       const winnerId =
         loserColor === "w" ? gameInfo?.black_player_id : gameInfo?.white_player_id;
       setGameOver("checkmate", winnerId ?? null);
@@ -198,7 +188,7 @@ export default function GamePage() {
       setGameOver("stalemate", null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chess]); // chess is a new ref after every move — that's the trigger
+  }, [chess]);
 
   useEffect(() => {
     refreshTimeline();
@@ -210,7 +200,6 @@ export default function GamePage() {
     try {
       await api.resignGame(token, activeGameId);
     } catch {
-      // game_over will arrive via WebSocket
     } finally {
       setResigning(false);
     }
@@ -256,7 +245,6 @@ export default function GamePage() {
       await api.renameTimeline(token, activeGameId, timelineId, trimmed);
       refreshTimeline();
     } catch {
-      // Ignore rename failures for now.
     }
   }
 
@@ -271,13 +259,11 @@ export default function GamePage() {
     setTimelineNodeLimit(null);
   }
 
-  // Build display names
   const whiteName = playerColor === "w" ? (username ?? "You") : opponentName;
   const blackName = playerColor === "b" ? (username ?? "You") : opponentName;
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 gap-4">
-      {/* Top bar */}
       <div className="flex items-center justify-between w-full max-w-5xl">
         <h1 className="text-xl font-bold text-chrono-accent">♟ ChessWess</h1>
         <div className="flex gap-2">
@@ -294,11 +280,8 @@ export default function GamePage() {
         </div>
       </div>
 
-      {/* Main layout */}
       <div className="flex flex-col lg:flex-row gap-6 w-full max-w-5xl items-start justify-center">
-        {/* Board column */}
         <div className="flex flex-col gap-3 items-center">
-          {/* Opponent energy (top) */}
           <div className="w-full" style={{ width: "min(80vw, 560px)" }}>
             <OpponentEnergyPanel
               opponentName={opponentName}
@@ -307,7 +290,6 @@ export default function GamePage() {
             />
           </div>
 
-          {/* Opponent clock */}
           <div className="w-full" style={{ width: "min(80vw, 560px)" }}>
             <PlayerClock
               color={playerColor === "w" ? "b" : "w"}
@@ -317,7 +299,6 @@ export default function GamePage() {
 
           <ChessBoard />
 
-          {/* Player clock */}
           <div className="w-full" style={{ width: "min(80vw, 560px)" }}>
             <PlayerClock
               color={playerColor ?? "w"}
@@ -325,13 +306,11 @@ export default function GamePage() {
             />
           </div>
 
-          {/* Player energy (bottom) */}
           <div className="w-full" style={{ width: "min(80vw, 560px)" }}>
             <EnergyPanel />
           </div>
         </div>
 
-        {/* Sidebar */}
         <div
           className="flex flex-col gap-3 w-full lg:w-64"
           style={{ minHeight: "min(80vw, 560px)" }}
@@ -339,7 +318,6 @@ export default function GamePage() {
           <GameStatus />
           <MoveHistory />
 
-          {/* Game info */}
           <div className="card text-xs text-gray-500 space-y-1">
             <p>
               <span className="text-gray-400">Game ID:</span>{" "}
@@ -356,12 +334,10 @@ export default function GamePage() {
         </div>
       </div>
 
-      {/* Game over overlay */}
       {status === "completed" && (
         <GameOverModal onRematch={handleLobby} onLobby={handleLobby} />
       )}
 
-      {/* Timeline panel */}
       <div className="w-full max-w-5xl">
         <TimelinePanel
           timelines={timelines}

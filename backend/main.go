@@ -13,9 +13,7 @@ import (
 )
 
 func main() {
-	// Load .env file if present (ignored in production where env vars are set externally)
 	if err := godotenv.Load("../.env"); err != nil {
-		// Try current directory too
 		_ = godotenv.Load(".env")
 	}
 
@@ -24,7 +22,6 @@ func main() {
 		port = "8080"
 	}
 
-	// Initialize database
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -42,7 +39,6 @@ func main() {
 		log.Fatalf("failed to seed bots: %v", err)
 	}
 
-	// Initialize Redis (optional for Phase 1 — used for caching in later phases)
 	rdb, err := db.ConnectRedis(os.Getenv("REDIS_URL"))
 	if err != nil {
 		log.Printf("WARNING: Redis unavailable (%v) — continuing without cache. Install Redis for full functionality.", err)
@@ -51,7 +47,6 @@ func main() {
 		defer rdb.Close()
 	}
 
-	// Build and start HTTP server
 	srv := server.New(pool, rdb)
 	httpServer := &http.Server{
 		Addr:         ":" + port,

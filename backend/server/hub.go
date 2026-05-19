@@ -6,13 +6,11 @@ import (
 	"sync"
 )
 
-// WSMessage is the envelope for all WebSocket messages.
 type WSMessage struct {
 	Type    string      `json:"type"`
 	Payload interface{} `json:"payload"`
 }
 
-// Client represents a connected WebSocket player.
 type Client struct {
 	hub    *Hub
 	gameID string
@@ -21,17 +19,15 @@ type Client struct {
 	conn   wsConn
 }
 
-// wsConn abstracts the WebSocket connection for testability.
 type wsConn interface {
 	ReadMessage() (int, []byte, error)
 	WriteMessage(int, []byte) error
 	Close() error
 }
 
-// Hub manages all active WebSocket clients grouped by game room.
 type Hub struct {
 	mu      sync.RWMutex
-	rooms   map[string]map[*Client]struct{} // gameID → set of clients
+	rooms   map[string]map[*Client]struct{}
 	join    chan *Client
 	leave   chan *Client
 	message chan roomMessage
@@ -42,7 +38,6 @@ type roomMessage struct {
 	data   []byte
 }
 
-// NewHub creates an initialised Hub.
 func NewHub() *Hub {
 	return &Hub{
 		rooms:   make(map[string]map[*Client]struct{}),
@@ -52,7 +47,6 @@ func NewHub() *Hub {
 	}
 }
 
-// Run processes hub events. Must be called in a goroutine.
 func (h *Hub) Run() {
 	for {
 		select {
@@ -81,7 +75,6 @@ func (h *Hub) Run() {
 				select {
 				case c.send <- msg.data:
 				default:
-					// Slow client — drop message
 					log.Printf("hub: dropping message for slow client %s", c.userID)
 				}
 			}
@@ -90,7 +83,6 @@ func (h *Hub) Run() {
 	}
 }
 
-// Broadcast sends a WSMessage to all clients in a game room.
 func (h *Hub) Broadcast(gameID string, msg WSMessage) {
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -99,11 +91,10 @@ func (h *Hub) Broadcast(gameID string, msg WSMessage) {
 	h.message <- roomMessage{gameID: gameID, data: data}
 }
 
-// writePump drains the send channel and writes to the WebSocket.
 func (c *Client) writePump() {
 	defer c.conn.Close()
 	for data := range c.send {
-		if err := c.conn.WriteMessage(1 /* TextMessage */, data); err != nil {
+		if err := c.conn.WriteMessage(1, data); err != nil {
 			return
 		}
 	}
