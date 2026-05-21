@@ -29,7 +29,7 @@ export default function Square({
     <div
       role="gridcell"
       aria-label={square}
-      className={`relative flex items-center justify-center cursor-pointer ${bg} transition-colors`}
+      className={`relative flex items-center justify-center cursor-pointer ${bg} transition-colors hover:brightness-105`}
       style={{ aspectRatio: "1 / 1", minWidth: 0, minHeight: 0 }}
       onClick={() => onClick(square)}
     >

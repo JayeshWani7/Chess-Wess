@@ -21,14 +21,14 @@ export default function MoveHistory() {
   const lastMoveIndex = moves.length - 1;
 
   return (
-    <div className="card flex flex-col min-h-0" style={{ maxHeight: "320px" }}>
-      <h3 className="text-sm font-semibold text-gray-400 mb-2 shrink-0">Move History</h3>
+    <div className="card flex flex-col min-h-0" style={{ maxHeight: "360px" }}>
+      <h3 className="text-sm font-semibold text-slate-300 mb-2 shrink-0">Move History</h3>
 
       {pairs.length === 0 ? (
-        <p className="text-gray-600 text-xs">No moves yet</p>
+        <p className="text-slate-500 text-xs">No moves yet</p>
       ) : (
         <div className="overflow-y-auto flex-1 pr-1">
-          <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 px-1 mb-1 text-xs text-gray-500 font-semibold uppercase tracking-wide">
+          <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 px-1 mb-1 text-xs text-slate-500 font-semibold uppercase tracking-wide">
             <span>#</span>
             <span>White</span>
             <span>Black</span>
@@ -46,13 +46,13 @@ export default function MoveHistory() {
                   key={pairIdx}
                   className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 rounded px-1 py-0.5 hover:bg-white/5"
                 >
-                  <span className="text-gray-500 text-right">{moveNum}.</span>
+                  <span className="text-slate-500 text-right">{moveNum}.</span>
 
                   <span
                     className={`rounded px-1 transition-colors ${
                       whiteIsLast
                         ? "bg-chrono-accent/30 text-white font-semibold"
-                        : "text-gray-200"
+                        : "text-slate-200"
                     }`}
                   >
                     {white}
@@ -62,7 +62,7 @@ export default function MoveHistory() {
                     className={`rounded px-1 transition-colors ${
                       blackIsLast && black
                         ? "bg-chrono-accent/30 text-white font-semibold"
-                        : "text-gray-400"
+                        : "text-slate-400"
                     }`}
                   >
                     {black ?? ""}

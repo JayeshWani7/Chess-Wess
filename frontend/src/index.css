@@ -2,9 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
 @layer base {
   body {
-    @apply bg-chrono-bg text-white font-mono;
+    @apply bg-chrono-bg text-slate-100 font-sans;
+    background-image:
+      radial-gradient(800px 400px at 8% -10%, rgba(61, 214, 201, 0.18), transparent 60%),
+      radial-gradient(900px 600px at 90% 0%, rgba(245, 200, 76, 0.14), transparent 60%),
+      linear-gradient(180deg, rgba(11, 15, 20, 0.92), rgba(11, 15, 20, 1));
+    background-attachment: fixed;
   }
 
   * {
@@ -18,19 +25,23 @@
   }
 
   .btn-primary {
-    @apply btn bg-chrono-accent hover:bg-opacity-80 text-white;
+    @apply btn bg-chrono-accent hover:bg-opacity-80 text-chrono-bg shadow-lg shadow-chrono-accent/20;
   }
 
   .btn-ghost {
-    @apply btn border border-chrono-border hover:bg-chrono-surface text-gray-300;
+    @apply btn border border-chrono-border hover:bg-chrono-surface/80 text-slate-200;
   }
 
   .card {
-    @apply bg-chrono-surface border border-chrono-border rounded-xl p-4;
+    @apply bg-chrono-surface/90 border border-chrono-border rounded-2xl p-4 shadow-lg shadow-black/20;
   }
 
   .input {
-    @apply bg-chrono-bg border border-chrono-border rounded-lg px-3 py-2 text-white
-           placeholder-gray-500 focus:outline-none focus:border-chrono-accent w-full;
+    @apply bg-chrono-bg border border-chrono-border rounded-lg px-3 py-2 text-slate-100
+           placeholder-slate-500 focus:outline-none focus:border-chrono-accent w-full;
+  }
+
+  .glass {
+    @apply bg-chrono-surface/70 border border-chrono-border/80 backdrop-blur;
   }
 }

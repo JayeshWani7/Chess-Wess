@@ -15,37 +15,37 @@ export const EnergyPanel: React.FC<EnergyPanelProps> = ({ className = "" }) => {
   const energyPercentage = (playerEnergy.energy_remaining / 15) * 100;
 
   return (
-    <div className={`bg-gray-800 rounded-lg p-4 border border-purple-500 ${className}`}>
+    <div className={`card ${className}`}>
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-bold text-white">TIME ENERGY</h3>
-        <span className="text-xs text-purple-400">Phase 5</span>
+        <h3 className="text-sm font-semibold text-slate-100">Time Energy</h3>
+        <span className="text-xs text-chrono-gold">Phase 5</span>
       </div>
-      <div className="w-full bg-gray-700 rounded-full h-6 overflow-hidden border border-purple-400 mb-2">
+      <div className="w-full bg-chrono-bg rounded-full h-6 overflow-hidden border border-chrono-border mb-2">
         <div
           className={`h-full transition-all duration-300 ${
             energyPercentage > 50
-              ? "bg-gradient-to-r from-blue-500 to-cyan-400"
+              ? "bg-gradient-to-r from-emerald-400 to-cyan-300"
               : energyPercentage > 25
-              ? "bg-gradient-to-r from-yellow-500 to-orange-400"
-              : "bg-gradient-to-r from-red-600 to-red-500"
+              ? "bg-gradient-to-r from-amber-400 to-orange-400"
+              : "bg-gradient-to-r from-rose-600 to-rose-400"
           }`}
           style={{ width: `${energyPercentage}%` }}
         />
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-        <div className="bg-gray-700 p-2 rounded border border-gray-600">
-          <p className="text-gray-400">Remaining</p>
-          <p className="text-xl font-bold text-cyan-400">{playerEnergy.energy_remaining}</p>
+        <div className="glass p-2 rounded">
+          <p className="text-slate-400">Remaining</p>
+          <p className="text-xl font-semibold text-cyan-300">{playerEnergy.energy_remaining}</p>
         </div>
-        <div className="bg-gray-700 p-2 rounded border border-gray-600">
-          <p className="text-gray-400">Spent</p>
-          <p className="text-xl font-bold text-orange-400">{playerEnergy.energy_spent}</p>
+        <div className="glass p-2 rounded">
+          <p className="text-slate-400">Spent</p>
+          <p className="text-xl font-semibold text-amber-300">{playerEnergy.energy_spent}</p>
         </div>
       </div>
-      <div className="bg-gray-900 rounded p-2 text-xs text-gray-300 space-y-1 border border-gray-700">
-        <p>💰 <span className="text-cyan-400 font-semibold">Rewind</span>: 1 energy/turn</p>
-        <p>🌊 <span className="text-blue-400 font-semibold">Jump Timeline</span>: 1 energy</p>
-        <p>🔒 <span className="text-purple-400 font-semibold">Lock Timeline</span>: 3 energy</p>
+      <div className="glass rounded p-2 text-xs text-slate-300 space-y-1">
+        <p>💰 <span className="text-cyan-300 font-semibold">Rewind</span>: 1 energy/turn</p>
+        <p>🌊 <span className="text-sky-300 font-semibold">Jump Timeline</span>: 1 energy</p>
+        <p>🔒 <span className="text-amber-300 font-semibold">Lock Timeline</span>: 3 energy</p>
       </div>
     </div>
   );
@@ -78,17 +78,15 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
 
   return (
     <div
-      className={`bg-gray-800 rounded border ${
-        timelineMetadata.is_locked ? "border-red-500" : "border-gray-600"
-      } p-3 ${className}`}
+      className={`card ${timelineMetadata.is_locked ? "border-rose-500/70" : ""} p-3 ${className}`}
     >
       <div className="flex items-start justify-between mb-2">
         <div>
-          <h4 className="text-sm font-bold text-white">{timelineName}</h4>
-          <p className="text-xs text-gray-400">ID: {timelineId.slice(0, 8)}...</p>
+          <h4 className="text-sm font-semibold text-slate-100">{timelineName}</h4>
+          <p className="text-xs text-slate-400">ID: {timelineId.slice(0, 8)}...</p>
         </div>
         {timelineMetadata.is_locked && (
-          <span className="bg-red-600 text-white text-xs px-2 py-1 rounded font-bold">
+          <span className="bg-rose-600 text-white text-xs px-2 py-1 rounded font-bold">
             🔒 LOCKED
           </span>
         )}
@@ -97,12 +95,12 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
       <div className="space-y-2 text-xs">
         <div>
           <div className="flex justify-between mb-1">
-            <span className="text-gray-300">Stability</span>
+            <span className="text-slate-300">Stability</span>
             <span className={`font-bold ${stabilityColor}`}>
               {timelineMetadata.stability_score}%
             </span>
           </div>
-          <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
+          <div className="w-full bg-chrono-bg rounded-full h-3 overflow-hidden">
             <div
               className={`h-full transition-all ${
                 timelineMetadata.stability_score > 70
@@ -116,24 +114,24 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <div className="bg-gray-700 p-2 rounded">
-            <p className="text-gray-400">Paradoxes</p>
-            <p className="text-lg font-bold text-red-400">{timelineMetadata.paradox_count}</p>
+          <div className="glass p-2 rounded">
+            <p className="text-slate-400">Paradoxes</p>
+            <p className="text-lg font-semibold text-rose-400">{timelineMetadata.paradox_count}</p>
           </div>
-          <div className="bg-gray-700 p-2 rounded">
-            <p className="text-gray-400">Status</p>
-            <p className="text-sm font-bold">
+          <div className="glass p-2 rounded">
+            <p className="text-slate-400">Status</p>
+            <p className="text-sm font-semibold">
               {timelineMetadata.is_collapsed ? (
-                <span className="text-gray-500">COLLAPSED</span>
+                <span className="text-slate-500">COLLAPSED</span>
               ) : (
                 <span className="text-green-400">ACTIVE</span>
               )}
             </p>
           </div>
         </div>
-        <div className="bg-gray-900 p-2 rounded border border-gray-700">
-          <p className="text-gray-400">Energy to Create</p>
-          <p className="text-cyan-400 font-bold">{timelineMetadata.energy_cost_to_create}</p>
+        <div className="glass p-2 rounded">
+          <p className="text-slate-400">Energy to Create</p>
+          <p className="text-cyan-300 font-semibold">{timelineMetadata.energy_cost_to_create}</p>
         </div>
       </div>
     </div>
@@ -143,6 +141,8 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
 interface TimelineControlPanelProps {
   onLockTimeline?: (timelineId: string) => void;
   className?: string;
+}
+
 export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
   onLockTimeline,
   className = "",
@@ -162,11 +162,11 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
   return (
     <div className={`space-y-3 ${className}`}>
       {timelinesToCollapse > 0 && (
-        <div className="bg-red-900 border border-red-600 rounded p-3">
-          <p className="text-sm text-red-200">
+        <div className="bg-rose-900/60 border border-rose-600 rounded p-3">
+          <p className="text-sm text-rose-200">
             ⚠️ <span className="font-bold">{timelinesToCollapse} timeline(s)</span> will collapse!
           </p>
-          <p className="text-xs text-red-300 mt-1">
+          <p className="text-xs text-rose-300 mt-1">
             {totalTimelines} / 30 timelines • Weakest first
           </p>
         </div>
@@ -180,16 +180,16 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
           return (
             <div
               key={timeline.timeline_id}
-              className={`bg-gray-800 rounded p-3 border-2 transition-all ${
-                isActive ? "border-cyan-500" : "border-gray-600"
+              className={`glass rounded-xl p-3 border-2 transition-all ${
+                isActive ? "border-cyan-400" : "border-chrono-border"
               } ${meta?.is_collapsed ? "opacity-50" : ""}`}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex-1">
-                  <h4 className="text-sm font-bold text-white">
+                  <h4 className="text-sm font-semibold text-slate-100">
                     {timeline.timeline_name || "Timeline"}
                   </h4>
-                  <p className="text-xs text-gray-400">Moves: {timeline.node_count || 0}</p>
+                  <p className="text-xs text-slate-400">Moves: {timeline.node_count || 0}</p>
                 </div>
                 {isActive && (
                   <span className="bg-cyan-600 text-white text-xs px-2 py-1 rounded font-bold">
@@ -203,8 +203,8 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
                   disabled={!canLock}
                   className={`w-full text-xs font-bold py-2 rounded transition-all ${
                     canLock
-                      ? "bg-purple-600 hover:bg-purple-700 text-white cursor-pointer"
-                      : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                      ? "bg-amber-500/90 hover:bg-amber-500 text-chrono-bg cursor-pointer"
+                      : "bg-chrono-bg text-slate-500 cursor-not-allowed"
                   }`}
                 >
                   🔒 Lock Timeline (3 energy)
@@ -246,31 +246,31 @@ export const OpponentEnergyPanel: React.FC<OpponentEnergyPanelProps> = ({
   ) : null;
 
   return (
-    <div className={`bg-gray-800 rounded-lg p-4 border border-red-500 ${className}`}>
+    <div className={`card ${className}`}>
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-bold text-white">{opponentName.toUpperCase()}</h3>
+        <h3 className="text-sm font-semibold text-slate-100">{opponentName.toUpperCase()}</h3>
         <div className="flex gap-2 items-center">{botBadge}</div>
       </div>
-      <div className="w-full bg-gray-700 rounded-full h-6 overflow-hidden border border-red-400 mb-2">
+      <div className="w-full bg-chrono-bg rounded-full h-6 overflow-hidden border border-chrono-border mb-2">
         <div
           className={`h-full transition-all duration-300 ${
             energyPercentage > 50
-              ? "bg-gradient-to-r from-blue-500 to-cyan-400"
+              ? "bg-gradient-to-r from-emerald-400 to-cyan-300"
               : energyPercentage > 25
-              ? "bg-gradient-to-r from-yellow-500 to-orange-400"
-              : "bg-gradient-to-r from-red-600 to-red-500"
+              ? "bg-gradient-to-r from-amber-400 to-orange-400"
+              : "bg-gradient-to-r from-rose-600 to-rose-400"
           }`}
           style={{ width: `${energyPercentage}%` }}
         />
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="bg-gray-700 p-2 rounded border border-gray-600">
-          <p className="text-gray-400">Remaining</p>
-          <p className="text-xl font-bold text-cyan-400">{opponentEnergy.energy_remaining}</p>
+        <div className="glass p-2 rounded">
+          <p className="text-slate-400">Remaining</p>
+          <p className="text-xl font-semibold text-cyan-300">{opponentEnergy.energy_remaining}</p>
         </div>
-        <div className="bg-gray-700 p-2 rounded border border-gray-600">
-          <p className="text-gray-400">Spent</p>
-          <p className="text-xl font-bold text-orange-400">{opponentEnergy.energy_spent}</p>
+        <div className="glass p-2 rounded">
+          <p className="text-slate-400">Spent</p>
+          <p className="text-xl font-semibold text-amber-300">{opponentEnergy.energy_spent}</p>
         </div>
       </div>
     </div>

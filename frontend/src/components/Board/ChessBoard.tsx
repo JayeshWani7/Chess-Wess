@@ -116,12 +116,12 @@ export default function ChessBoard() {
   return (
     <div className="relative select-none">
       <div
-        className="grid border-2 border-chrono-border rounded-sm overflow-hidden shadow-2xl"
+        className="grid border border-chrono-border rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5"
         style={{
           gridTemplateColumns: "repeat(8, 1fr)",
           gridTemplateRows: "repeat(8, 1fr)",
-          width: "min(80vw, 560px)",
-          height: "min(80vw, 560px)",
+          width: "min(92vw, 620px)",
+          height: "min(92vw, 620px)",
         }}
         role="grid"
         aria-label="Chess board"
@@ -151,9 +151,9 @@ export default function ChessBoard() {
         )}
       </div>
 
-      <div className="flex mt-1" style={{ width: "min(80vw, 560px)" }}>
+      <div className="flex mt-2" style={{ width: "min(92vw, 620px)" }}>
         {files.map((f) => (
-          <span key={f} className="flex-1 text-center text-xs text-gray-500">
+          <span key={f} className="flex-1 text-center text-xs text-slate-500">
             {f}
           </span>
         ))}
@@ -161,10 +161,10 @@ export default function ChessBoard() {
 
       <div
         className="absolute top-0 left-0 flex flex-col"
-        style={{ height: "min(80vw, 560px)", transform: "translateX(-16px)" }}
+        style={{ height: "min(92vw, 620px)", transform: "translateX(-18px)" }}
       >
         {ranks.map((r) => (
-          <span key={r} className="flex-1 flex items-center text-xs text-gray-500">
+          <span key={r} className="flex-1 flex items-center text-xs text-slate-500">
             {r}
           </span>
         ))}
