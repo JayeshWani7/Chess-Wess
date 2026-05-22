@@ -114,8 +114,8 @@ export default function TimelinePanel({
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-gray-300">Timeline Graph</h3>
-            <p className="text-xs text-gray-500">
+            <h3 className="text-sm font-semibold text-ink">Timeline Graph</h3>
+            <p className="text-xs text-moss">
               Active timeline: {activeTimeline?.timeline_name ?? (activeTimelineId ? shortId(activeTimelineId) : "none")}
             </p>
           </div>
@@ -134,7 +134,7 @@ export default function TimelinePanel({
               ))}
             </select>
             <button
-              className="btn-ghost text-xs"
+              className="btn-outline text-xs"
               disabled={!rewindTargetId}
               onClick={() => rewindTargetId && onRewind(rewindTargetId)}
             >
@@ -158,7 +158,7 @@ export default function TimelinePanel({
               }}
             />
             <button
-              className="btn-ghost text-xs"
+              className="btn-outline text-xs"
               disabled={!activeTimelineId || !nameDraft.trim()}
               onClick={() => activeTimelineId && onRenameTimeline(activeTimelineId, nameDraft)}
             >
@@ -166,7 +166,7 @@ export default function TimelinePanel({
             </button>
           </div>
           {activeTimeline?.nodes_partial && (
-            <div className="flex items-center gap-2 text-xs text-gray-500">
+            <div className="flex items-center gap-2 text-xs text-moss">
               <span>
                 Showing last {nodeLimit ?? 0} of {activeTimeline.node_count ?? "?"} nodes
               </span>
@@ -188,38 +188,38 @@ export default function TimelinePanel({
         />
 
         <div className="grid gap-3 md:grid-cols-3">
-          <div className="rounded-lg border border-chrono-border bg-chrono-bg/60 p-3">
-            <p className="text-xs uppercase text-gray-500">Active Node</p>
+          <div className="rounded-lg border border-line bg-paper p-3">
+            <p className="text-xs uppercase text-moss">Active Node</p>
             {activeNode ? (
-              <div className="mt-2 text-xs text-gray-300 space-y-1">
+              <div className="mt-2 text-xs text-ink space-y-1">
                 <p>Node: {shortId(activeNode.id)}</p>
                 <p>Turn: {activeNode.turn_number}</p>
                 <p>Move: {activeNode.move?.san ?? "Root"}</p>
               </div>
             ) : (
-              <p className="mt-2 text-xs text-gray-500">No active node</p>
+              <p className="mt-2 text-xs text-moss">No active node</p>
             )}
           </div>
 
-          <div className="rounded-lg border border-chrono-border bg-chrono-bg/60 p-3">
-            <p className="text-xs uppercase text-gray-500">Inspector</p>
+          <div className="rounded-lg border border-line bg-paper p-3">
+            <p className="text-xs uppercase text-moss">Inspector</p>
             {selectedNode ? (
-              <div className="mt-2 text-xs text-gray-300 space-y-1">
+              <div className="mt-2 text-xs text-ink space-y-1">
                 <p>Node: {shortId(selectedNode.id)}</p>
                 <p>Timeline: {shortId(selectedNode.timeline_id)}</p>
                 <p>Turn: {selectedNode.turn_number}</p>
                 <p>Move: {selectedNode.move?.san ?? "Root"}</p>
-                <p className="text-gray-500">FEN: {selectedNode.board_state}</p>
+                <p className="text-moss">FEN: {selectedNode.board_state}</p>
               </div>
             ) : (
-              <p className="mt-2 text-xs text-gray-500">Select a node to inspect</p>
+              <p className="mt-2 text-xs text-moss">Select a node to inspect</p>
             )}
           </div>
 
-          <div className="rounded-lg border border-chrono-border bg-chrono-bg/60 p-3">
-            <p className="text-xs uppercase text-gray-500">Timeline Stats</p>
+          <div className="rounded-lg border border-line bg-paper p-3">
+            <p className="text-xs uppercase text-moss">Timeline Stats</p>
             {statsNode && material && counts ? (
-              <div className="mt-2 text-xs text-gray-300 space-y-1">
+              <div className="mt-2 text-xs text-ink space-y-1">
                 <p>
                   Material: W {material.white} / B {material.black}
                 </p>
@@ -238,12 +238,12 @@ export default function TimelinePanel({
                     : 0
                   ).toFixed(2)}
                 </p>
-                <p className="text-gray-500">
+                <p className="text-moss">
                   Based on {selectedNode ? "selected" : "active"} node
                 </p>
               </div>
             ) : (
-              <p className="mt-2 text-xs text-gray-500">No stats available</p>
+              <p className="mt-2 text-xs text-moss">No stats available</p>
             )}
           </div>
         </div>

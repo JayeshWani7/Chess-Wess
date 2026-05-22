@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Chess } from "chess.js";
 import { api, type GameHistoryEntry, type GameMove } from "../utils/api";
 import { useAuthStore } from "../store/authStore";
@@ -12,12 +13,15 @@ const PIECES: Record<string, string> = {
 };
 
 interface Props {
-  game: GameHistoryEntry;
-  onBack: () => void;
+  game?: GameHistoryEntry;
+  onBack?: () => void;
 }
 
 export default function GameReviewPage({ game, onBack }: Props) {
   const { token, userId } = useAuthStore();
+  const { gameId } = useParams();
+  const navigate = useNavigate();
+  const [resolvedGame, setResolvedGame] = useState<GameHistoryEntry | null>(game ?? null);
   const [moves, setMoves] = useState<GameMove[]>([]);
   const [cursor, setCursor] = useState(-1);
   const [loading, setLoading] = useState(true);
@@ -25,12 +29,24 @@ export default function GameReviewPage({ game, onBack }: Props) {
 
   useEffect(() => {
     if (!token) return;
-    api.getGameMoves(token, game.id).then((m) => {
+    if (resolvedGame) return;
+    if (!gameId) return;
+    api.listMyGames(token)
+      .then((list) => {
+        const found = (list ?? []).find((entry) => entry.id === gameId) ?? null;
+        setResolvedGame(found);
+      })
+      .catch(() => setResolvedGame(null));
+  }, [token, resolvedGame, gameId]);
+
+  useEffect(() => {
+    if (!token || !resolvedGame) return;
+    api.getGameMoves(token, resolvedGame.id).then((m) => {
       setMoves(m);
       setCursor(m.length - 1);
       setLoading(false);
     });
-  }, [token, game.id]);
+  }, [token, resolvedGame]);
 
   useEffect(() => {
     const el = moveListRef.current?.querySelector(`[data-idx="${cursor}"]`);
@@ -65,13 +81,13 @@ export default function GameReviewPage({ game, onBack }: Props) {
       : [];
 
   const flipped =
-    game.black_player_id === userId &&
-    game.white_player_id !== userId;
+    resolvedGame?.black_player_id === userId &&
+    resolvedGame?.white_player_id !== userId;
   const ranks = flipped ? [...RANKS].reverse() : RANKS;
   const fileOrder = flipped ? [...FILES].reverse() : FILES;
 
   const resultLabel = (() => {
-    const r = game.result;
+    const r = resolvedGame?.result;
     if (!r) return "";
     const map: Record<string, string> = {
       checkmate: "Checkmate",
@@ -83,39 +99,52 @@ export default function GameReviewPage({ game, onBack }: Props) {
     return map[r] ?? r;
   })();
 
-  const didWin = game.winner_id === userId;
-  const isDraw = game.result === "stalemate" || game.result === "draw";
+  const didWin = resolvedGame?.winner_id === userId;
+  const isDraw = resolvedGame?.result === "stalemate" || resolvedGame?.result === "draw";
   const outcomeLabel = isDraw ? "Draw" : didWin ? "Victory" : "Defeat";
   const outcomeColor = isDraw
-    ? "text-gray-400"
+    ? "text-moss"
     : didWin
-    ? "text-green-400"
-    : "text-red-400";
+    ? "text-leaf"
+    : "text-rust";
 
   const pairs: Array<{ num: number; white: GameMove | null; black: GameMove | null; wi: number; bi: number }> = [];
   for (let i = 0; i < moves.length; i += 2) {
     pairs.push({ num: i / 2 + 1, white: moves[i] ?? null, black: moves[i + 1] ?? null, wi: i, bi: i + 1 });
   }
 
+  if (!resolvedGame) {
+    return (
+      <div className="card text-sm text-moss">
+        Game not found. <Link to="/history" className="text-pine">Back to history</Link>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen p-4 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <button onClick={onBack} className="btn-ghost text-sm">← Back</button>
-        <h1 className="text-xl font-bold text-chrono-accent">♟ Game Review</h1>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={onBack ?? (() => navigate("/history"))}
+          className="btn-ghost text-sm"
+        >
+          ← Back
+        </button>
+        <h1 className="text-xl font-display text-ink">Game Review</h1>
         <div className="text-right">
           <span className={`font-bold text-sm ${outcomeColor}`}>{outcomeLabel}</span>
-          {resultLabel && <span className="text-gray-500 text-xs ml-2">· {resultLabel}</span>}
+          {resultLabel && <span className="text-moss text-xs ml-2">· {resultLabel}</span>}
         </div>
       </div>
 
       <div className="flex items-center justify-between mb-4 px-1">
         <div className="flex items-center gap-2">
           <span className="text-lg">⬜</span>
-          <span className="font-semibold text-sm">{game.white_username}</span>
+          <span className="font-semibold text-sm">{resolvedGame.white_username}</span>
         </div>
-        <span className="text-gray-500 text-xs">vs</span>
+        <span className="text-moss text-xs">vs</span>
         <div className="flex items-center gap-2">
-          <span className="font-semibold text-sm">{game.black_username}</span>
+          <span className="font-semibold text-sm">{resolvedGame.black_username}</span>
           <span className="text-lg">⬛</span>
         </div>
       </div>
@@ -124,7 +153,7 @@ export default function GameReviewPage({ game, onBack }: Props) {
         <div className="flex flex-col items-center gap-2">
           <div className="relative select-none">
             <div
-              className="grid border-2 border-chrono-border rounded-sm overflow-hidden shadow-2xl"
+              className="grid border-2 border-line rounded-sm overflow-hidden shadow-2xl"
               style={{
                 gridTemplateColumns: "repeat(8, 1fr)",
                 gridTemplateRows: "repeat(8, 1fr)",
@@ -173,7 +202,7 @@ export default function GameReviewPage({ game, onBack }: Props) {
 
             <div className="flex mt-1" style={{ width: "min(80vw, 480px)" }}>
               {fileOrder.map((f) => (
-                <span key={f} className="flex-1 text-center text-xs text-gray-500">{f}</span>
+                <span key={f} className="flex-1 text-center text-xs text-moss">{f}</span>
               ))}
             </div>
 
@@ -182,7 +211,7 @@ export default function GameReviewPage({ game, onBack }: Props) {
               style={{ height: "min(80vw, 480px)", transform: "translateX(-16px)" }}
             >
               {ranks.map((r) => (
-                <span key={r} className="flex-1 flex items-center text-xs text-gray-500">{r}</span>
+                <span key={r} className="flex-1 flex items-center text-xs text-moss">{r}</span>
               ))}
             </div>
           </div>
@@ -200,7 +229,7 @@ export default function GameReviewPage({ game, onBack }: Props) {
               className="btn-ghost text-lg px-3 py-1 disabled:opacity-30"
               title="Previous (←)"
             >◀</button>
-            <span className="text-xs text-gray-500 w-20 text-center tabular-nums">
+            <span className="text-xs text-moss w-20 text-center tabular-nums">
               {cursor === -1 ? "Start" : `Move ${cursor + 1} / ${moves.length}`}
             </span>
             <button
@@ -216,19 +245,19 @@ export default function GameReviewPage({ game, onBack }: Props) {
               title="End (↓)"
             >⏭</button>
           </div>
-          <p className="text-xs text-gray-600">Use ← → arrow keys to navigate</p>
+          <p className="text-xs text-moss">Use ← → arrow keys to navigate</p>
         </div>
 
         <div className="card flex flex-col w-full lg:w-64" style={{ maxHeight: "520px" }}>
-          <h3 className="text-sm font-semibold text-gray-400 mb-2 shrink-0">
+          <h3 className="text-sm font-semibold text-moss mb-2 shrink-0">
             Moves · {moves.length} total
           </h3>
 
           {loading ? (
-            <p className="text-gray-600 text-xs">Loading…</p>
+            <p className="text-moss text-xs">Loading…</p>
           ) : (
             <div className="overflow-y-auto flex-1 pr-1" ref={moveListRef}>
-              <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 px-1 mb-1 text-xs text-gray-500 font-semibold uppercase tracking-wide shrink-0">
+              <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 px-1 mb-1 text-xs text-moss font-semibold uppercase tracking-wide shrink-0">
                 <span>#</span><span>White</span><span>Black</span>
               </div>
 
@@ -238,7 +267,7 @@ export default function GameReviewPage({ game, onBack }: Props) {
                     key={num}
                     className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 rounded px-1 py-0.5"
                   >
-                    <span className="text-gray-500 text-right">{num}.</span>
+                    <span className="text-moss text-right">{num}.</span>
 
                     {white && (
                       <button
@@ -246,8 +275,8 @@ export default function GameReviewPage({ game, onBack }: Props) {
                         onClick={() => setCursor(wi)}
                         className={`rounded px-1 text-left transition-colors ${
                           cursor === wi
-                            ? "bg-chrono-accent/40 text-white font-semibold"
-                            : "text-gray-200 hover:bg-white/10"
+                            ? "bg-mist text-pine font-semibold"
+                            : "text-ink hover:bg-mist"
                         }`}
                       >
                         {white.move_san}
@@ -260,8 +289,8 @@ export default function GameReviewPage({ game, onBack }: Props) {
                         onClick={() => setCursor(bi)}
                         className={`rounded px-1 text-left transition-colors ${
                           cursor === bi
-                            ? "bg-chrono-accent/40 text-white font-semibold"
-                            : "text-gray-400 hover:bg-white/10"
+                            ? "bg-mist text-pine font-semibold"
+                            : "text-moss hover:bg-mist"
                         }`}
                       >
                         {black.move_san}
@@ -275,12 +304,12 @@ export default function GameReviewPage({ game, onBack }: Props) {
             </div>
           )}
 
-          {!loading && game.result && (
-            <div className="mt-3 pt-3 border-t border-chrono-border text-center text-xs text-gray-500 shrink-0">
+          {!loading && resolvedGame.result && (
+            <div className="mt-3 pt-3 border-t border-line text-center text-xs text-moss shrink-0">
               {resultLabel}
-              {game.winner_id && (
-                <span className="ml-1 text-gray-400">
-                  · {game.winner_id === game.white_player_id ? game.white_username : game.black_username} wins
+              {resolvedGame.winner_id && (
+                <span className="ml-1 text-moss">
+                  · {resolvedGame.winner_id === resolvedGame.white_player_id ? resolvedGame.white_username : resolvedGame.black_username} wins
                 </span>
               )}
             </div>

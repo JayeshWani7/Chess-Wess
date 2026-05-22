@@ -22,13 +22,13 @@ export default function MoveHistory() {
 
   return (
     <div className="card flex flex-col min-h-0" style={{ maxHeight: "360px" }}>
-      <h3 className="text-sm font-semibold text-slate-300 mb-2 shrink-0">Move History</h3>
+      <h3 className="text-sm font-semibold text-ink mb-2 shrink-0">Move History</h3>
 
       {pairs.length === 0 ? (
-        <p className="text-slate-500 text-xs">No moves yet</p>
+        <p className="text-moss text-xs">No moves yet</p>
       ) : (
         <div className="overflow-y-auto flex-1 pr-1">
-          <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 px-1 mb-1 text-xs text-slate-500 font-semibold uppercase tracking-wide">
+          <div className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 px-1 mb-1 text-xs text-moss font-semibold uppercase tracking-wide">
             <span>#</span>
             <span>White</span>
             <span>Black</span>
@@ -44,15 +44,15 @@ export default function MoveHistory() {
               return (
                 <div
                   key={pairIdx}
-                  className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 rounded px-1 py-0.5 hover:bg-white/5"
+                  className="grid grid-cols-[2rem_1fr_1fr] gap-x-2 rounded px-1 py-0.5 hover:bg-mist"
                 >
-                  <span className="text-slate-500 text-right">{moveNum}.</span>
+                  <span className="text-moss text-right">{moveNum}.</span>
 
                   <span
                     className={`rounded px-1 transition-colors ${
                       whiteIsLast
-                        ? "bg-chrono-accent/30 text-white font-semibold"
-                        : "text-slate-200"
+                        ? "bg-mist text-pine font-semibold"
+                        : "text-ink"
                     }`}
                   >
                     {white}
@@ -61,8 +61,8 @@ export default function MoveHistory() {
                   <span
                     className={`rounded px-1 transition-colors ${
                       blackIsLast && black
-                        ? "bg-chrono-accent/30 text-white font-semibold"
-                        : "text-slate-400"
+                        ? "bg-mist text-pine font-semibold"
+                        : "text-moss"
                     }`}
                   >
                     {black ?? ""}

@@ -17,8 +17,8 @@ export default function GameStatus() {
     <div
       className={`text-center text-sm font-semibold py-3 px-4 rounded-xl ${
         isMyTurn
-          ? "bg-chrono-accent/15 text-chrono-accent border border-chrono-accent/40"
-          : "glass text-slate-300"
+          ? "bg-mist text-pine border border-gold/40"
+          : "glass text-ink"
       }`}
     >
       {message}

@@ -51,17 +51,17 @@ export default function PlayerClock({ color, username }: PlayerClockProps) {
     <div
       className={`flex items-center justify-between px-4 py-3 rounded-lg border transition-colors ${
         isActive
-          ? "border-chrono-accent bg-chrono-accent/10"
-          : "border-chrono-border bg-chrono-surface"
+          ? "border-leaf bg-mist"
+          : "border-line bg-panel"
       }`}
     >
       <div className="flex items-center gap-2">
         <span className="text-lg">{color === "w" ? "⬜" : "⬛"}</span>
-        <span className="font-semibold text-sm">{username}</span>
+        <span className="font-semibold text-sm text-ink">{username}</span>
       </div>
       <span
         className={`font-mono text-xl font-bold tabular-nums ${
-          urgent ? "text-red-400 animate-pulse" : "text-white"
+          urgent ? "text-rust animate-pulse" : "text-ink"
         }`}
       >
         {formatTime(time)}

@@ -42,7 +42,7 @@ export default function GameOverModal({ onRematch, onLobby }: GameOverModalProps
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-ink/70 flex items-center justify-center z-50 p-4"
     >
       <motion.div
         initial={{ scale: 0.85, y: 20 }}
@@ -50,8 +50,8 @@ export default function GameOverModal({ onRematch, onLobby }: GameOverModalProps
         className="card w-full max-w-sm text-center space-y-4"
       >
         <div className="text-6xl">{emoji}</div>
-        <h2 className="text-3xl font-bold">{headline}</h2>
-        {sub && <p className="text-gray-400 capitalize">{sub}</p>}
+        <h2 className="text-3xl font-display text-ink">{headline}</h2>
+        {sub && <p className="text-moss capitalize">{sub}</p>}
 
         <div className="flex gap-3 pt-2">
           <button onClick={onLobby} className="btn-ghost flex-1">

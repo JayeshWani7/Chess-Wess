@@ -45,7 +45,7 @@ function buildBranchEdges(nodes: TimelineNode[], nodeIds: Set<string>): Edge[] {
       source: parent.id,
       target: node.id,
       type: "smoothstep",
-      style: { strokeDasharray: "4 6", stroke: "#64748b" },
+      style: { strokeDasharray: "4 6", stroke: "#8a8f85" },
     });
   }
 
@@ -87,14 +87,14 @@ export default function TimelineGraph({
           label: node.move?.san ?? (node.turn_number === 0 ? "Root" : `T${node.turn_number}`),
         },
         style: {
-          background: node.timeline_id === activeTimelineId ? "#1f2937" : "#111827",
+          background: node.timeline_id === activeTimelineId ? "#f2e8d5" : "#fcf8f1",
           border:
             node.id === selectedNodeId
-              ? "2px solid #38bdf8"
+              ? "2px solid #c9a227"
               : node.timeline_id === activeTimelineId
-              ? "1px solid #22c55e"
-              : "1px solid #334155",
-          color: "#e2e8f0",
+              ? "1px solid #4b7a2c"
+              : "1px solid #d9cfbf",
+          color: "#1b1e1a",
           padding: "6px 10px",
           borderRadius: 10,
           fontSize: 12,
@@ -107,7 +107,7 @@ export default function TimelineGraph({
           source: node.parent_node_id,
           target: node.id,
           type: "smoothstep",
-          style: { stroke: "#475569" },
+          style: { stroke: "#b2a991" },
         });
       }
     }
@@ -119,7 +119,7 @@ export default function TimelineGraph({
   }, [timelines, activeTimelineId, selectedNodeId]);
 
   return (
-    <div className="h-[360px] w-full rounded-xl border border-chrono-border bg-chrono-surface">
+    <div className="h-[360px] w-full rounded-xl border border-line bg-panel">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -128,7 +128,7 @@ export default function TimelineGraph({
         nodesConnectable={false}
         onNodeClick={handleNodeClick}
       >
-        <Background gap={24} color="#1f2937" />
+        <Background gap={24} color="#e6dcc8" />
         <Controls position="top-right" />
       </ReactFlow>
     </div>

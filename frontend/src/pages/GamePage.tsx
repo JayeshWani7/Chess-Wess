@@ -263,99 +263,99 @@ export default function GamePage() {
   const blackName = playerColor === "b" ? (username ?? "You") : opponentName;
 
   return (
-    <div className="min-h-screen">
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 space-y-6">
-        <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Multiverse Chess</p>
-            <h1 className="text-2xl font-semibold text-chrono-accent">ChessWess Arena</h1>
-          </div>
-          <div className="flex gap-2">
+    <div className="space-y-6">
+      <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-moss">Active Game</p>
+          <h1 className="text-2xl font-display text-ink">ChessWess Arena</h1>
+          <p className="text-sm text-moss">
+            Timeline: {activeTimelineId ? activeTimelineId.slice(0, 8) : "-"}
+          </p>
+        </div>
+        <div className="flex gap-2">
           <button
             onClick={handleResign}
             disabled={resigning || status !== "active"}
-            className="btn-ghost text-sm text-rose-300 border-rose-800 hover:bg-rose-900/20"
+            className="btn-danger text-sm"
           >
             {resigning ? "Resigning..." : "Resign"}
           </button>
           <button onClick={handleLobby} className="btn-ghost text-sm">
-            ← Lobby
+            Return to Lobby
           </button>
+        </div>
+      </header>
+
+      <main className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
+        <section className="space-y-4">
+          <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
+            <OpponentEnergyPanel
+              opponentName={opponentName}
+              isBot={isOpponentBot}
+              botRating={opponentBotRating}
+            />
           </div>
-        </header>
 
-        <main className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] items-start">
-          <section className="space-y-4">
-            <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
-              <OpponentEnergyPanel
-                opponentName={opponentName}
-                isBot={isOpponentBot}
-                botRating={opponentBotRating}
-              />
-            </div>
+          <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
+            <PlayerClock
+              color={playerColor === "w" ? "b" : "w"}
+              username={playerColor === "w" ? blackName : whiteName}
+            />
+          </div>
 
-            <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
-              <PlayerClock
-                color={playerColor === "w" ? "b" : "w"}
-                username={playerColor === "w" ? blackName : whiteName}
-              />
-            </div>
+          <ChessBoard />
 
-            <ChessBoard />
+          <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
+            <PlayerClock
+              color={playerColor ?? "w"}
+              username={username ?? "You"}
+            />
+          </div>
 
-            <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
-              <PlayerClock
-                color={playerColor ?? "w"}
-                username={username ?? "You"}
-              />
-            </div>
-
-            <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
-              <EnergyPanel />
-            </div>
-          </section>
-
-          <aside className="flex flex-col gap-4 w-full">
-            <GameStatus />
-            <MoveHistory />
-
-            <div className="card text-xs text-slate-400 space-y-1">
-              <p>
-                <span className="text-slate-500">Game ID:</span>{" "}
-                {activeGameId?.slice(0, 8)}
-              </p>
-              <p>
-                <span className="text-slate-500">You play:</span>{" "}
-                {playerColor === "w" ? "⬜ White" : "⬛ Black"}
-              </p>
-              <p>
-                <span className="text-slate-500">Status:</span> {status}
-              </p>
-            </div>
-          </aside>
-        </main>
-
-        {status === "completed" && (
-          <GameOverModal onRematch={handleLobby} onLobby={handleLobby} />
-        )}
-
-        <section className="w-full">
-          <TimelinePanel
-            timelines={timelines}
-            activeTimelineId={activeTimelineId}
-            activeTimelineLatestNodeId={activeTimelineLatestNodeId}
-            selectedNodeId={selectedTimelineNodeId}
-            nodesById={nodesById}
-            onSelectNode={selectTimelineNode}
-            onRewind={handleRewind}
-            onSwitchTimeline={handleSwitchTimeline}
-            onRenameTimeline={handleRenameTimeline}
-            onLoadMoreGraph={handleLoadMoreGraph}
-            onLoadFullGraph={handleLoadFullGraph}
-            nodeLimit={timelineNodeLimit}
-          />
+          <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
+            <EnergyPanel />
+          </div>
         </section>
-      </div>
+
+        <aside className="flex flex-col gap-4 w-full">
+          <GameStatus />
+          <MoveHistory />
+
+          <div className="card text-xs text-moss space-y-1">
+            <p>
+              <span className="text-ink">Game ID:</span> {activeGameId?.slice(0, 8)}
+            </p>
+            <p>
+              <span className="text-ink">You play:</span>{" "}
+              {playerColor === "w" ? "⬜ White" : "⬛ Black"}
+            </p>
+            <p>
+              <span className="text-ink">Status:</span> {status}
+            </p>
+          </div>
+        </aside>
+      </main>
+
+      {status === "completed" && (
+        <GameOverModal onRematch={handleLobby} onLobby={handleLobby} />
+      )}
+
+      <section className="w-full">
+        <TimelinePanel
+          timelines={timelines}
+          activeTimelineId={activeTimelineId}
+          activeTimelineLatestNodeId={activeTimelineLatestNodeId}
+          selectedNodeId={selectedTimelineNodeId}
+          nodesById={nodesById}
+          onSelectNode={selectTimelineNode}
+          onRewind={handleRewind}
+          onSwitchTimeline={handleSwitchTimeline}
+          onRenameTimeline={handleRenameTimeline}
+          onLoadMoreGraph={handleLoadMoreGraph}
+          onLoadFullGraph={handleLoadFullGraph}
+          nodeLimit={timelineNodeLimit}
+        />
+      </section>
     </div>
   );
 }

@@ -17,35 +17,35 @@ export const EnergyPanel: React.FC<EnergyPanelProps> = ({ className = "" }) => {
   return (
     <div className={`card ${className}`}>
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold text-slate-100">Time Energy</h3>
-        <span className="text-xs text-chrono-gold">Phase 5</span>
+        <h3 className="text-sm font-semibold text-ink">Time Energy</h3>
+        <span className="text-xs text-gold">Energy</span>
       </div>
-      <div className="w-full bg-chrono-bg rounded-full h-6 overflow-hidden border border-chrono-border mb-2">
+      <div className="w-full bg-mist rounded-full h-6 overflow-hidden border border-line mb-2">
         <div
           className={`h-full transition-all duration-300 ${
             energyPercentage > 50
-              ? "bg-gradient-to-r from-emerald-400 to-cyan-300"
+              ? "bg-gradient-to-r from-leaf to-gold"
               : energyPercentage > 25
-              ? "bg-gradient-to-r from-amber-400 to-orange-400"
-              : "bg-gradient-to-r from-rose-600 to-rose-400"
+              ? "bg-gradient-to-r from-gold to-amber-300"
+              : "bg-gradient-to-r from-rust to-amber-300"
           }`}
           style={{ width: `${energyPercentage}%` }}
         />
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs mb-3">
         <div className="glass p-2 rounded">
-          <p className="text-slate-400">Remaining</p>
-          <p className="text-xl font-semibold text-cyan-300">{playerEnergy.energy_remaining}</p>
+          <p className="text-moss">Remaining</p>
+          <p className="text-xl font-semibold text-leaf">{playerEnergy.energy_remaining}</p>
         </div>
         <div className="glass p-2 rounded">
-          <p className="text-slate-400">Spent</p>
-          <p className="text-xl font-semibold text-amber-300">{playerEnergy.energy_spent}</p>
+          <p className="text-moss">Spent</p>
+          <p className="text-xl font-semibold text-gold">{playerEnergy.energy_spent}</p>
         </div>
       </div>
-      <div className="glass rounded p-2 text-xs text-slate-300 space-y-1">
-        <p>💰 <span className="text-cyan-300 font-semibold">Rewind</span>: 1 energy/turn</p>
-        <p>🌊 <span className="text-sky-300 font-semibold">Jump Timeline</span>: 1 energy</p>
-        <p>🔒 <span className="text-amber-300 font-semibold">Lock Timeline</span>: 3 energy</p>
+      <div className="glass rounded p-2 text-xs text-ink space-y-1">
+        <p>Rewind: <span className="text-pine font-semibold">1 energy/turn</span></p>
+        <p>Jump Timeline: <span className="text-pine font-semibold">1 energy</span></p>
+        <p>Lock Timeline: <span className="text-pine font-semibold">3 energy</span></p>
       </div>
     </div>
   );
@@ -71,23 +71,23 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
 
   const stabilityColor =
     timelineMetadata.stability_score > 70
-      ? "text-green-400"
+      ? "text-leaf"
       : timelineMetadata.stability_score > 40
-      ? "text-yellow-400"
-      : "text-red-400";
+      ? "text-gold"
+      : "text-rust";
 
   return (
     <div
-      className={`card ${timelineMetadata.is_locked ? "border-rose-500/70" : ""} p-3 ${className}`}
+      className={`card ${timelineMetadata.is_locked ? "border-rust/70" : ""} p-3 ${className}`}
     >
       <div className="flex items-start justify-between mb-2">
         <div>
-          <h4 className="text-sm font-semibold text-slate-100">{timelineName}</h4>
-          <p className="text-xs text-slate-400">ID: {timelineId.slice(0, 8)}...</p>
+          <h4 className="text-sm font-semibold text-ink">{timelineName}</h4>
+          <p className="text-xs text-moss">ID: {timelineId.slice(0, 8)}...</p>
         </div>
         {timelineMetadata.is_locked && (
-          <span className="bg-rose-600 text-white text-xs px-2 py-1 rounded font-bold">
-            🔒 LOCKED
+          <span className="bg-rust text-paper text-xs px-2 py-1 rounded font-bold">
+            LOCKED
           </span>
         )}
       </div>
@@ -95,19 +95,19 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
       <div className="space-y-2 text-xs">
         <div>
           <div className="flex justify-between mb-1">
-            <span className="text-slate-300">Stability</span>
+            <span className="text-ink">Stability</span>
             <span className={`font-bold ${stabilityColor}`}>
               {timelineMetadata.stability_score}%
             </span>
           </div>
-          <div className="w-full bg-chrono-bg rounded-full h-3 overflow-hidden">
+          <div className="w-full bg-mist rounded-full h-3 overflow-hidden">
             <div
               className={`h-full transition-all ${
                 timelineMetadata.stability_score > 70
-                  ? "bg-green-600"
+                  ? "bg-leaf"
                   : timelineMetadata.stability_score > 40
-                  ? "bg-yellow-600"
-                  : "bg-red-600"
+                  ? "bg-gold"
+                  : "bg-rust"
               }`}
               style={{ width: `${timelineMetadata.stability_score}%` }}
             />
@@ -115,23 +115,23 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="glass p-2 rounded">
-            <p className="text-slate-400">Paradoxes</p>
-            <p className="text-lg font-semibold text-rose-400">{timelineMetadata.paradox_count}</p>
+            <p className="text-moss">Paradoxes</p>
+            <p className="text-lg font-semibold text-rust">{timelineMetadata.paradox_count}</p>
           </div>
           <div className="glass p-2 rounded">
-            <p className="text-slate-400">Status</p>
+            <p className="text-moss">Status</p>
             <p className="text-sm font-semibold">
               {timelineMetadata.is_collapsed ? (
-                <span className="text-slate-500">COLLAPSED</span>
+                <span className="text-moss">COLLAPSED</span>
               ) : (
-                <span className="text-green-400">ACTIVE</span>
+                <span className="text-leaf">ACTIVE</span>
               )}
             </p>
           </div>
         </div>
         <div className="glass p-2 rounded">
-          <p className="text-slate-400">Energy to Create</p>
-          <p className="text-cyan-300 font-semibold">{timelineMetadata.energy_cost_to_create}</p>
+          <p className="text-moss">Energy to Create</p>
+          <p className="text-pine font-semibold">{timelineMetadata.energy_cost_to_create}</p>
         </div>
       </div>
     </div>
@@ -162,11 +162,11 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
   return (
     <div className={`space-y-3 ${className}`}>
       {timelinesToCollapse > 0 && (
-        <div className="bg-rose-900/60 border border-rose-600 rounded p-3">
-          <p className="text-sm text-rose-200">
-            ⚠️ <span className="font-bold">{timelinesToCollapse} timeline(s)</span> will collapse!
+        <div className="bg-rust/10 border border-rust/50 rounded p-3">
+          <p className="text-sm text-rust">
+            <span className="font-bold">{timelinesToCollapse} timeline(s)</span> will collapse.
           </p>
-          <p className="text-xs text-rose-300 mt-1">
+          <p className="text-xs text-moss mt-1">
             {totalTimelines} / 30 timelines • Weakest first
           </p>
         </div>
@@ -181,18 +181,18 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
             <div
               key={timeline.timeline_id}
               className={`glass rounded-xl p-3 border-2 transition-all ${
-                isActive ? "border-cyan-400" : "border-chrono-border"
+                isActive ? "border-gold" : "border-line"
               } ${meta?.is_collapsed ? "opacity-50" : ""}`}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex-1">
-                  <h4 className="text-sm font-semibold text-slate-100">
+                  <h4 className="text-sm font-semibold text-ink">
                     {timeline.timeline_name || "Timeline"}
                   </h4>
-                  <p className="text-xs text-slate-400">Moves: {timeline.node_count || 0}</p>
+                  <p className="text-xs text-moss">Moves: {timeline.node_count || 0}</p>
                 </div>
                 {isActive && (
-                  <span className="bg-cyan-600 text-white text-xs px-2 py-1 rounded font-bold">
+                  <span className="bg-gold text-ink text-xs px-2 py-1 rounded font-bold">
                     ACTIVE
                   </span>
                 )}
@@ -203,11 +203,11 @@ export const TimelineControlPanel: React.FC<TimelineControlPanelProps> = ({
                   disabled={!canLock}
                   className={`w-full text-xs font-bold py-2 rounded transition-all ${
                     canLock
-                      ? "bg-amber-500/90 hover:bg-amber-500 text-chrono-bg cursor-pointer"
-                      : "bg-chrono-bg text-slate-500 cursor-not-allowed"
+                      ? "bg-gold/90 hover:bg-gold text-ink cursor-pointer"
+                      : "bg-mist text-moss cursor-not-allowed"
                   }`}
                 >
-                  🔒 Lock Timeline (3 energy)
+                  Lock Timeline (3 energy)
                 </button>
               )}
             </div>
@@ -240,7 +240,7 @@ export const OpponentEnergyPanel: React.FC<OpponentEnergyPanelProps> = ({
   const energyPercentage = (opponentEnergy.energy_remaining / 15) * 100;
 
   const botBadge = isBot ? (
-    <span className="text-xs bg-amber-900 text-amber-300 px-2 py-1 rounded font-bold border border-amber-600">
+    <span className="text-xs bg-gold/20 text-pine px-2 py-1 rounded font-bold border border-gold/60">
       Bot {botRating}
     </span>
   ) : null;
@@ -248,29 +248,29 @@ export const OpponentEnergyPanel: React.FC<OpponentEnergyPanelProps> = ({
   return (
     <div className={`card ${className}`}>
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-semibold text-slate-100">{opponentName.toUpperCase()}</h3>
+        <h3 className="text-sm font-semibold text-ink">{opponentName.toUpperCase()}</h3>
         <div className="flex gap-2 items-center">{botBadge}</div>
       </div>
-      <div className="w-full bg-chrono-bg rounded-full h-6 overflow-hidden border border-chrono-border mb-2">
+      <div className="w-full bg-mist rounded-full h-6 overflow-hidden border border-line mb-2">
         <div
           className={`h-full transition-all duration-300 ${
             energyPercentage > 50
-              ? "bg-gradient-to-r from-emerald-400 to-cyan-300"
+              ? "bg-gradient-to-r from-leaf to-gold"
               : energyPercentage > 25
-              ? "bg-gradient-to-r from-amber-400 to-orange-400"
-              : "bg-gradient-to-r from-rose-600 to-rose-400"
+              ? "bg-gradient-to-r from-gold to-amber-300"
+              : "bg-gradient-to-r from-rust to-amber-300"
           }`}
           style={{ width: `${energyPercentage}%` }}
         />
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="glass p-2 rounded">
-          <p className="text-slate-400">Remaining</p>
-          <p className="text-xl font-semibold text-cyan-300">{opponentEnergy.energy_remaining}</p>
+          <p className="text-moss">Remaining</p>
+          <p className="text-xl font-semibold text-leaf">{opponentEnergy.energy_remaining}</p>
         </div>
         <div className="glass p-2 rounded">
-          <p className="text-slate-400">Spent</p>
-          <p className="text-xl font-semibold text-amber-300">{opponentEnergy.energy_spent}</p>
+          <p className="text-moss">Spent</p>
+          <p className="text-xl font-semibold text-gold">{opponentEnergy.energy_spent}</p>
         </div>
       </div>
     </div>
@@ -289,15 +289,15 @@ export const EnergyNotification: React.FC<EnergyNotificationProps> = ({
   onDismiss,
 }) => {
   const bgColor = {
-    warning: "bg-yellow-900 border-yellow-600",
-    error: "bg-red-900 border-red-600",
-    info: "bg-blue-900 border-blue-600",
+    warning: "bg-gold/15 border-gold/50",
+    error: "bg-rust/15 border-rust/50",
+    info: "bg-leaf/10 border-leaf/40",
   }[type];
 
   const textColor = {
-    warning: "text-yellow-200",
-    error: "text-red-200",
-    info: "text-blue-200",
+    warning: "text-pine",
+    error: "text-rust",
+    info: "text-leaf",
   }[type];
 
   return (
@@ -306,7 +306,7 @@ export const EnergyNotification: React.FC<EnergyNotificationProps> = ({
       {onDismiss && (
         <button
           onClick={onDismiss}
-          className="text-gray-300 hover:text-white text-lg"
+          className="text-moss hover:text-ink text-lg"
         >
           ✕
         </button>

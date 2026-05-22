@@ -116,7 +116,7 @@ export default function ChessBoard() {
   return (
     <div className="relative select-none">
       <div
-        className="grid border border-chrono-border rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/5"
+        className="grid border border-line rounded-xl overflow-hidden shadow-2xl ring-1 ring-ink/10"
         style={{
           gridTemplateColumns: "repeat(8, 1fr)",
           gridTemplateRows: "repeat(8, 1fr)",
@@ -153,7 +153,7 @@ export default function ChessBoard() {
 
       <div className="flex mt-2" style={{ width: "min(92vw, 620px)" }}>
         {files.map((f) => (
-          <span key={f} className="flex-1 text-center text-xs text-slate-500">
+          <span key={f} className="flex-1 text-center text-xs text-moss">
             {f}
           </span>
         ))}
@@ -164,7 +164,7 @@ export default function ChessBoard() {
         style={{ height: "min(92vw, 620px)", transform: "translateX(-18px)" }}
       >
         {ranks.map((r) => (
-          <span key={r} className="flex-1 flex items-center text-xs text-slate-500">
+          <span key={r} className="flex-1 flex items-center text-xs text-moss">
             {r}
           </span>
         ))}
@@ -172,32 +172,32 @@ export default function ChessBoard() {
 
       {pendingPromo && (
         <div
-          className="absolute inset-0 bg-black/60 flex items-center justify-center z-20 rounded-sm"
+          className="absolute inset-0 bg-ink/60 flex items-center justify-center z-20 rounded-sm"
           onClick={handlePromoDismiss}
         >
           <div
-            className="bg-chrono-surface border border-chrono-border rounded-xl p-4 flex flex-col items-center gap-3 shadow-2xl"
+            className="bg-panel border border-line rounded-xl p-4 flex flex-col items-center gap-3 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <p className="text-sm font-semibold text-gray-300">Promote pawn to:</p>
+            <p className="text-sm font-semibold text-ink">Promote pawn to:</p>
             <div className="flex gap-3">
               {PROMO_PIECES.map(({ piece, label, white, black }) => (
                 <button
                   key={piece}
                   onClick={() => handlePromoChoice(piece)}
-                  className="flex flex-col items-center gap-1 w-14 h-16 rounded-lg border border-chrono-border hover:border-chrono-accent hover:bg-chrono-accent/10 transition-colors"
+                  className="flex flex-col items-center gap-1 w-14 h-16 rounded-lg border border-line hover:border-gold hover:bg-gold/10 transition-colors"
                   aria-label={label}
                 >
                   <span className="text-4xl leading-none mt-1">
                     {playerColor === "w" ? white : black}
                   </span>
-                  <span className="text-xs text-gray-400">{label}</span>
+                  <span className="text-xs text-moss">{label}</span>
                 </button>
               ))}
             </div>
             <button
               onClick={handlePromoDismiss}
-              className="text-xs text-gray-500 hover:text-gray-300 mt-1"
+              className="text-xs text-moss hover:text-ink mt-1"
             >
               Cancel
             </button>

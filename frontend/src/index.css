@@ -2,15 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Playfair+Display:wght@600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap");
 
 @layer base {
   body {
-    @apply bg-chrono-bg text-slate-100 font-sans;
+    @apply bg-paper text-ink font-body;
+    color-scheme: light;
     background-image:
-      radial-gradient(800px 400px at 8% -10%, rgba(61, 214, 201, 0.18), transparent 60%),
-      radial-gradient(900px 600px at 90% 0%, rgba(245, 200, 76, 0.14), transparent 60%),
-      linear-gradient(180deg, rgba(11, 15, 20, 0.92), rgba(11, 15, 20, 1));
+      radial-gradient(900px 500px at 10% -10%, rgba(75, 122, 44, 0.18), transparent 60%),
+      radial-gradient(1000px 600px at 90% 0%, rgba(201, 162, 39, 0.16), transparent 60%),
+      repeating-linear-gradient(
+        -45deg,
+        rgba(27, 30, 26, 0.04) 0px,
+        rgba(27, 30, 26, 0.04) 2px,
+        transparent 2px,
+        transparent 8px
+      ),
+      linear-gradient(180deg, #f7f3ea 0%, #f2e8d5 100%);
     background-attachment: fixed;
   }
 
@@ -25,23 +33,31 @@
   }
 
   .btn-primary {
-    @apply btn bg-chrono-accent hover:bg-opacity-80 text-chrono-bg shadow-lg shadow-chrono-accent/20;
+    @apply btn bg-leaf text-paper shadow-lg shadow-leaf/20 hover:bg-pine;
+  }
+
+  .btn-outline {
+    @apply btn border border-leaf text-pine hover:bg-leaf/10;
   }
 
   .btn-ghost {
-    @apply btn border border-chrono-border hover:bg-chrono-surface/80 text-slate-200;
+    @apply btn border border-line text-ink hover:bg-mist;
+  }
+
+  .btn-danger {
+    @apply btn bg-rust text-paper hover:bg-rust/90;
   }
 
   .card {
-    @apply bg-chrono-surface/90 border border-chrono-border rounded-2xl p-4 shadow-lg shadow-black/20;
+    @apply bg-panel border border-line rounded-2xl p-4 shadow-lg shadow-black/10;
   }
 
   .input {
-    @apply bg-chrono-bg border border-chrono-border rounded-lg px-3 py-2 text-slate-100
-           placeholder-slate-500 focus:outline-none focus:border-chrono-accent w-full;
+    @apply bg-paper border border-line rounded-lg px-3 py-2 text-ink
+           placeholder-moss focus:outline-none focus:border-gold focus:ring-2 focus:ring-gold/40 w-full;
   }
 
   .glass {
-    @apply bg-chrono-surface/70 border border-chrono-border/80 backdrop-blur;
+    @apply bg-panel/70 border border-line/80 backdrop-blur;
   }
 }

@@ -34,10 +34,10 @@ export default function Square({
       onClick={() => onClick(square)}
     >
       {isLegal && !piece && (
-        <div className="absolute w-1/3 h-1/3 rounded-full bg-black/20 pointer-events-none" />
+        <div className="absolute w-1/3 h-1/3 rounded-full bg-ink/20 pointer-events-none" />
       )}
       {isLegal && piece && (
-        <div className="absolute inset-0 rounded-sm ring-4 ring-inset ring-black/30 pointer-events-none" />
+        <div className="absolute inset-0 rounded-sm ring-4 ring-inset ring-ink/30 pointer-events-none" />
       )}
 
       {piece && (
