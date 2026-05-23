@@ -106,40 +106,59 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	}
 
 	uci, _ := payload["uci"].(string)
-	san, _ := payload["san"].(string)
-	fen, _ := payload["fen"].(string)
 	timelineID, _ := payload["timeline_id"].(string)
 	parentNodeID, _ := payload["parent_node_id"].(string)
 
-	if uci == "" || san == "" || fen == "" {
-		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "move requires uci, san, and fen"})
+	if uci == "" {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "move requires uci"})
 		return
 	}
 
 	ctx := context.Background()
 
-	promotion := ""
-	if len(uci) > 4 {
-		promotion = string(uci[4])
-	}
-
-	var moveID string
-	err := s.db.QueryRow(
-		ctx,
-		`INSERT INTO game_moves (game_id, player_id, move_number, move_san, move_uci, fen_after)
-		 VALUES ($1, $2,
-		   (SELECT COALESCE(MAX(move_number), 0) + 1 FROM game_moves WHERE game_id = $1),
-		   $3, $4, $5)
-		 RETURNING id`,
-		c.gameID, c.userID, san, uci, fen,
-	).Scan(&moveID)
+	parentNode, resolvedTimelineID, err := s.resolveTimelineParent(ctx, c.gameID, timelineID, parentNodeID)
 	if err != nil {
-		log.Printf("ws: failed to persist game_move: %v", err)
-		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to save move"})
+		log.Printf("ws: failed to resolve timeline parent: %v", err)
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "invalid timeline context"})
 		return
 	}
 
-	_, err = s.createGameNode(ctx, c.gameID, c.userID, uci, san, promotion, fen, timelineID, parentNodeID)
+	fenOpt, err := chess.FEN(parentNode.BoardState)
+	if err != nil {
+		log.Printf("ws: bad parent FEN: %v", err)
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "invalid board state"})
+		return
+	}
+
+	game := chess.NewGame(fenOpt)
+	pos := game.Position()
+	validMoves := game.ValidMoves()
+	var selected *chess.Move
+	for _, mv := range validMoves {
+		if (chess.UCINotation{}).Encode(pos, mv) == uci {
+			selected = mv
+			break
+		}
+	}
+	if selected == nil {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "illegal move"})
+		return
+	}
+
+	san := (chess.AlgebraicNotation{}).Encode(pos, selected)
+	if err := game.Move(selected); err != nil {
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "illegal move"})
+		return
+	}
+
+	fen := game.Position().String()
+
+	promotion := ""
+	if selected.Promo() != chess.NoPieceType {
+		promotion = selected.Promo().String()
+	}
+
+	nodeID, err := s.createGameNode(ctx, c.gameID, c.userID, uci, san, promotion, fen, resolvedTimelineID, parentNode.ID)
 	if err != nil {
 		log.Printf("ws: failed to create game node: %v", err)
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to save timeline move"})
@@ -172,7 +191,7 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	s.hub.Broadcast(c.gameID, WSMessage{
 		Type: "move",
 		Payload: map[string]interface{}{
-			"id":        moveID,
+			"id":        nodeID,
 			"player_id": c.userID,
 			"uci":       uci,
 			"san":       san,
@@ -198,46 +217,9 @@ func outcomeFromFEN(fen string) (string, bool) {
 }
 
 func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, promotion, fen, timelineID, parentNodeID string) (string, error) {
-	var parentNode *models.GameNode
-
-	if parentNodeID != "" {
-		pn, err := db.GetNode(ctx, s.db, parentNodeID)
-		if err != nil {
-			return "", fmt.Errorf("createGameNode: parent node not found: %w", err)
-		}
-		if pn.GameID != gameID {
-			return "", fmt.Errorf("createGameNode: parent node not in game")
-		}
-		parentNode = pn
-		if timelineID == "" {
-			timelineID = pn.TimelineID
-		} else if timelineID != pn.TimelineID {
-			return "", fmt.Errorf("createGameNode: parent node not in timeline")
-		}
-	}
-
-	if timelineID == "" {
-		activeTimelineID, err := db.GetActiveTimelineID(ctx, s.db, gameID)
-		if err != nil {
-			return "", fmt.Errorf("createGameNode: failed to read active timeline: %w", err)
-		}
-		if activeTimelineID != nil && *activeTimelineID != "" {
-			timelineID = *activeTimelineID
-		} else {
-			timelines, err := db.GetGameTimelines(ctx, s.db, gameID)
-			if err != nil || len(timelines) == 0 {
-				return "", fmt.Errorf("createGameNode: no timelines for game")
-			}
-			timelineID = timelines[0].ID
-		}
-	}
-
-	if parentNode == nil {
-		latest, err := db.GetLatestTimelineNode(ctx, s.db, timelineID)
-		if err != nil {
-			return "", fmt.Errorf("createGameNode: latest node not found: %w", err)
-		}
-		parentNode = latest
+	parentNode, resolvedTimelineID, err := s.resolveTimelineParent(ctx, gameID, timelineID, parentNodeID)
+	if err != nil {
+		return "", fmt.Errorf("createGameNode: %w", err)
 	}
 
 	var isCheck, isCheckmate, isStalemate bool
@@ -261,7 +243,7 @@ func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, p
 	resolvedParentID := parentNode.ID
 	nodeData := &models.GameNode{
 		GameID:        gameID,
-		TimelineID:    timelineID,
+		TimelineID:    resolvedTimelineID,
 		ParentNodeID:  &resolvedParentID,
 		Move:          &models.Move{UCI: uci, SAN: san, Promotion: promotion},
 		BoardState:    fen,
@@ -275,6 +257,52 @@ func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, p
 	}
 
 	return db.CreateNode(ctx, s.db, nodeData, resolvedParentID)
+}
+
+func (s *Server) resolveTimelineParent(ctx context.Context, gameID, timelineID, parentNodeID string) (*models.GameNode, string, error) {
+	var parentNode *models.GameNode
+
+	if parentNodeID != "" {
+		pn, err := db.GetNode(ctx, s.db, parentNodeID)
+		if err != nil {
+			return nil, "", fmt.Errorf("parent node not found: %w", err)
+		}
+		if pn.GameID != gameID {
+			return nil, "", fmt.Errorf("parent node not in game")
+		}
+		parentNode = pn
+		if timelineID == "" {
+			timelineID = pn.TimelineID
+		} else if timelineID != pn.TimelineID {
+			return nil, "", fmt.Errorf("parent node not in timeline")
+		}
+	}
+
+	if timelineID == "" {
+		activeTimelineID, err := db.GetActiveTimelineID(ctx, s.db, gameID)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to read active timeline: %w", err)
+		}
+		if activeTimelineID != nil && *activeTimelineID != "" {
+			timelineID = *activeTimelineID
+		} else {
+			timelines, err := db.GetGameTimelines(ctx, s.db, gameID)
+			if err != nil || len(timelines) == 0 {
+				return nil, "", fmt.Errorf("no timelines for game")
+			}
+			timelineID = timelines[0].ID
+		}
+	}
+
+	if parentNode == nil {
+		latest, err := db.GetLatestTimelineNode(ctx, s.db, timelineID)
+		if err != nil {
+			return nil, "", fmt.Errorf("latest node not found: %w", err)
+		}
+		parentNode = latest
+	}
+
+	return parentNode, timelineID, nil
 }
 
 func (s *Server) handleRewindMessage(c *Client, msg WSMessage) {

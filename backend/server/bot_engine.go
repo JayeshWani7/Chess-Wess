@@ -156,23 +156,9 @@ func (b *BotEngine) playMove(ctx context.Context, game *chess.Game) {
 	pos := game.Position()
 	fen := pos.String()
 	uci := moveToUCI(chosen)
-	san := chosen.String()
+	san := (chess.AlgebraicNotation{}).Encode(pos, chosen)
 
-	var moveID string
-	err := b.server.db.QueryRow(ctx,
-		`INSERT INTO game_moves (game_id, player_id, move_number, move_san, move_uci, fen_after)
-		 VALUES ($1, $2,
-		   (SELECT COALESCE(MAX(move_number), 0) + 1 FROM game_moves WHERE game_id = $1),
-		   $3, $4, $5)
-		 RETURNING id`,
-		b.gameID, b.botUserID, san, uci, fen,
-	).Scan(&moveID)
-	if err != nil {
-		log.Printf("bot: failed to persist move: %v", err)
-		return
-	}
-
-	_, err = b.server.createGameNode(ctx, b.gameID, b.botUserID, uci, san, "", fen, "", "")
+	nodeID, err := b.server.createGameNode(ctx, b.gameID, b.botUserID, uci, san, "", fen, "", "")
 	if err != nil {
 		log.Printf("bot: failed to create timeline node: %v", err)
 	}
@@ -180,7 +166,7 @@ func (b *BotEngine) playMove(ctx context.Context, game *chess.Game) {
 	b.server.hub.Broadcast(b.gameID, WSMessage{
 		Type: "move",
 		Payload: map[string]interface{}{
-			"id":        moveID,
+			"id":        nodeID,
 			"player_id": b.botUserID,
 			"uci":       uci,
 			"san":       san,

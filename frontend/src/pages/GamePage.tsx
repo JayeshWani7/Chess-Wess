@@ -20,7 +20,6 @@ export default function GamePage() {
     status,
     playerColor,
     leaveGame,
-    loadMoves,
     applyMove,
     setGameOver,
     setTimelineData,
@@ -41,7 +40,6 @@ export default function GamePage() {
   const { token, userId, username } = useAuthStore();
   const [resigning, setResigning] = useState(false);
   const [opponentName, setOpponentName] = useState("Opponent");
-  const [opponentId, setOpponentId] = useState<string | null>(null);
   const [isOpponentBot, setIsOpponentBot] = useState(false);
   const [opponentBotRating, setOpponentBotRating] = useState(0);
   const [timelineNodeLimit, setTimelineNodeLimit] = useState<number | null>(200);
@@ -67,21 +65,6 @@ export default function GamePage() {
     connectedRef.current = true;
 
     wsClient.connect(activeGameId, token);
-
-    api.getGameMoves(token, activeGameId).then((moves) => {
-      loadMoves(
-        moves.map((m) => ({
-          id: m.id,
-          gameId: m.game_id,
-          playerId: m.player_id,
-          moveNumber: m.move_number,
-          moveSan: m.move_san,
-          moveUci: m.move_uci,
-          fenAfter: m.fen_after,
-          createdAt: m.created_at,
-        }))
-      );
-    });
 
     refreshTimeline();
 
@@ -143,7 +126,7 @@ export default function GamePage() {
       wsClient.disconnect();
       connectedRef.current = false;
     };
-  }, [activeGameId, token, userId, loadMoves, applyMove, setGameOver, refreshTimeline]);
+  }, [activeGameId, token, userId, applyMove, setGameOver, refreshTimeline]);
 
   useEffect(() => {
     if (!gameInfo || !userId || !token) return;
@@ -152,8 +135,6 @@ export default function GamePage() {
     const oppId =
       expectedColor === "w" ? gameInfo.black_player_id : gameInfo.white_player_id;
     if (!oppId) return;
-
-    setOpponentId(oppId);
 
     api.getUser(token, oppId)
       .then((u) => {

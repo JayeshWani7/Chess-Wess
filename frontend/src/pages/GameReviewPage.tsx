@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Chess } from "chess.js";
-import { api, type GameHistoryEntry, type GameMove } from "../utils/api";
+import { api, type GameHistoryEntry, type GameTimelineResponse } from "../utils/api";
 import { useAuthStore } from "../store/authStore";
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
@@ -17,12 +17,20 @@ interface Props {
   onBack?: () => void;
 }
 
+interface ReviewMove {
+  id: string;
+  move_number: number;
+  move_san: string;
+  move_uci: string;
+  fen_after: string;
+}
+
 export default function GameReviewPage({ game, onBack }: Props) {
   const { token, userId } = useAuthStore();
   const { gameId } = useParams();
   const navigate = useNavigate();
   const [resolvedGame, setResolvedGame] = useState<GameHistoryEntry | null>(game ?? null);
-  const [moves, setMoves] = useState<GameMove[]>([]);
+  const [moves, setMoves] = useState<ReviewMove[]>([]);
   const [cursor, setCursor] = useState(-1);
   const [loading, setLoading] = useState(true);
   const moveListRef = useRef<HTMLDivElement>(null);
@@ -41,9 +49,29 @@ export default function GameReviewPage({ game, onBack }: Props) {
 
   useEffect(() => {
     if (!token || !resolvedGame) return;
-    api.getGameMoves(token, resolvedGame.id).then((m) => {
-      setMoves(m);
-      setCursor(m.length - 1);
+    api.getGameTimeline(token, resolvedGame.id).then((data: GameTimelineResponse) => {
+      const timelineId = data.active_timeline_id ?? data.timelines[0]?.timeline_id ?? null;
+      const timeline = timelineId
+        ? data.timelines.find((t) => t.timeline_id === timelineId) ?? data.timelines[0]
+        : data.timelines[0];
+
+      const nodes = [...(timeline?.nodes ?? [])].sort((a, b) => a.turn_number - b.turn_number);
+      const reviewMoves = nodes
+        .filter((n) => n.move?.uci && n.move?.san)
+        .map((n) => ({
+          id: n.id,
+          move_number: n.turn_number,
+          move_san: n.move?.san ?? "",
+          move_uci: n.move?.uci ?? "",
+          fen_after: n.board_state,
+        }));
+
+      setMoves(reviewMoves);
+      setCursor(reviewMoves.length - 1);
+      setLoading(false);
+    }).catch(() => {
+      setMoves([]);
+      setCursor(-1);
       setLoading(false);
     });
   }, [token, resolvedGame]);
@@ -76,7 +104,7 @@ export default function GameReviewPage({ game, onBack }: Props) {
   }
 
   const lastMoveSquares =
-    cursor >= 0
+    cursor >= 0 && moves[cursor].move_uci.length >= 4
       ? [moves[cursor].move_uci.slice(0, 2), moves[cursor].move_uci.slice(2, 4)]
       : [];
 
@@ -108,7 +136,7 @@ export default function GameReviewPage({ game, onBack }: Props) {
     ? "text-leaf"
     : "text-rust";
 
-  const pairs: Array<{ num: number; white: GameMove | null; black: GameMove | null; wi: number; bi: number }> = [];
+  const pairs: Array<{ num: number; white: ReviewMove | null; black: ReviewMove | null; wi: number; bi: number }> = [];
   for (let i = 0; i < moves.length; i += 2) {
     pairs.push({ num: i / 2 + 1, white: moves[i] ?? null, black: moves[i + 1] ?? null, wi: i, bi: i + 1 });
   }
