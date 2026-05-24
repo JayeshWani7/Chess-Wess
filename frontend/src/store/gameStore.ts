@@ -115,6 +115,9 @@ interface GameState {
   loadMoves: (moves: GameMove[]) => void;
   applyMove: (move: Move, fen: string) => void;
   setTimelineData: (timelines: TimelineData[], activeTimelineId: string | null) => void;
+  addTimelineNode: (node: TimelineNode) => void;
+  addTimeline: (timelineId: string, timelineName: string | null | undefined, rootNode: TimelineNode) => void;
+  renameTimelineLocal: (timelineId: string, name: string) => void;
   setActiveTimelineId: (timelineId: string | null) => void;
   selectTimelineNode: (nodeId: string | null) => void;
   syncActiveTimelineBoard: () => void;
@@ -269,6 +272,88 @@ export const useGameStore = create<GameState>()((set, get) => ({
       moves,
       chess: latestFen ? new Chess(latestFen) : get().chess,
     });
+  },
+
+  addTimelineNode: (node) => {
+    set((state) => {
+      if (state.nodesById[node.id]) {
+        return {};
+      }
+
+      const nodesById = { ...state.nodesById, [node.id]: node };
+      const nodesByTimeline = { ...state.nodesByTimeline };
+      const existing = nodesByTimeline[node.timeline_id] ?? [];
+      const updatedNodes = [...existing, node].sort((a, b) => a.turn_number - b.turn_number);
+      nodesByTimeline[node.timeline_id] = updatedNodes;
+
+      let found = false;
+      const timelines = state.timelines.map((timeline) => {
+        if (timeline.timeline_id !== node.timeline_id) return timeline;
+        found = true;
+        return {
+          ...timeline,
+          nodes: updatedNodes,
+          node_count: (timeline.node_count ?? existing.length) + 1,
+        };
+      });
+
+      if (!found) {
+        timelines.push({
+          timeline_id: node.timeline_id,
+          nodes: updatedNodes,
+          node_count: updatedNodes.length,
+          nodes_partial: false,
+        });
+      }
+
+      const nextState: Partial<GameState> = {
+        nodesById,
+        nodesByTimeline,
+        timelines,
+      };
+
+      if (state.activeTimelineId === node.timeline_id) {
+        const latestNode = updatedNodes[updatedNodes.length - 1];
+        nextState.activeTimelineLatestNodeId = latestNode.id;
+        nextState.moves = buildMovesFromTimeline(updatedNodes);
+        nextState.chess = new Chess(latestNode.board_state);
+      }
+
+      return nextState;
+    });
+  },
+
+  addTimeline: (timelineId, timelineName, rootNode) => {
+    set((state) => {
+      if (state.timelines.some((timeline) => timeline.timeline_id === timelineId)) {
+        return {};
+      }
+
+      const nodesById = { ...state.nodesById, [rootNode.id]: rootNode };
+      const nodesByTimeline = { ...state.nodesByTimeline, [timelineId]: [rootNode] };
+      const timelines = [
+        ...state.timelines,
+        {
+          timeline_id: timelineId,
+          timeline_name: timelineName ?? null,
+          nodes: [rootNode],
+          node_count: 1,
+          nodes_partial: false,
+        },
+      ];
+
+      return { nodesById, nodesByTimeline, timelines };
+    });
+  },
+
+  renameTimelineLocal: (timelineId, name) => {
+    set((state) => ({
+      timelines: state.timelines.map((timeline) =>
+        timeline.timeline_id === timelineId
+          ? { ...timeline, timeline_name: name }
+          : timeline
+      ),
+    }));
   },
 
   setActiveTimelineId: (timelineId) => {

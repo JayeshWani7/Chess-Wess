@@ -23,6 +23,9 @@ export default function GamePage() {
     applyMove,
     setGameOver,
     setTimelineData,
+    addTimelineNode,
+    addTimeline,
+    renameTimelineLocal,
     selectTimelineNode,
     activeTimelineId,
     activeTimelineLatestNodeId,
@@ -66,8 +69,6 @@ export default function GamePage() {
 
     wsClient.connect(activeGameId, token);
 
-    refreshTimeline();
-
     const unsub = wsClient.onMessage((msg: WSMessage) => {
       switch (msg.type) {
         case "move": {
@@ -77,27 +78,64 @@ export default function GamePage() {
             uci: string;
             san: string;
             fen: string;
+            timeline_id: string;
+            parent_node_id: string;
+            turn_number: number;
+            created_at: string;
           };
+          if (activeGameId && p.timeline_id) {
+            addTimelineNode({
+              id: p.id,
+              game_id: activeGameId,
+              timeline_id: p.timeline_id,
+              parent_node_id: p.parent_node_id || null,
+              move: { uci: p.uci, san: p.san },
+              board_state: p.fen,
+              turn_number: p.turn_number,
+              created_by_user: p.player_id,
+              created_at: p.created_at,
+            });
+          }
           if (p.player_id !== userId) {
             const from = p.uci.slice(0, 2);
             const to = p.uci.slice(2, 4);
             const promotion = p.uci[4] as "q" | "r" | "b" | "n" | undefined;
             applyMove({ from, to, promotion } as Parameters<typeof applyMove>[0], p.fen);
           }
-          refreshTimeline();
           break;
         }
         case "timeline_created": {
-          const p = msg.payload as { timeline_id: string };
-          if (p?.timeline_id) {
+          const p = msg.payload as {
+            timeline_id: string;
+            timeline_name?: string;
+            root_node_id: string;
+            board_state: string;
+            turn_number: number;
+            created_by_user: string;
+            created_at: string;
+          };
+          if (activeGameId && p?.timeline_id) {
+            addTimeline(p.timeline_id, p.timeline_name, {
+              id: p.root_node_id,
+              game_id: activeGameId,
+              timeline_id: p.timeline_id,
+              parent_node_id: null,
+              move: null,
+              board_state: p.board_state,
+              turn_number: p.turn_number,
+              created_by_user: p.created_by_user,
+              created_at: p.created_at,
+            });
             setActiveTimelineId(p.timeline_id);
             wsClient.switchTimeline(p.timeline_id);
           }
-          refreshTimeline();
           break;
         }
         case "timeline_renamed": {
-          refreshTimeline();
+          const p = msg.payload as { timeline_id: string; timeline_name: string };
+          if (p?.timeline_id && p.timeline_name) {
+            renameTimelineLocal(p.timeline_id, p.timeline_name);
+          }
           break;
         }
         case "timeline_switched": {
@@ -105,7 +143,6 @@ export default function GamePage() {
           if (p?.timeline_id) {
             setActiveTimelineId(p.timeline_id);
           }
-          refreshTimeline();
           break;
         }
         case "game_over": {
@@ -126,7 +163,7 @@ export default function GamePage() {
       wsClient.disconnect();
       connectedRef.current = false;
     };
-  }, [activeGameId, token, userId, applyMove, setGameOver, refreshTimeline]);
+  }, [activeGameId, token, userId, applyMove, setGameOver, addTimelineNode, addTimeline, renameTimelineLocal, setActiveTimelineId]);
 
   useEffect(() => {
     if (!gameInfo || !userId || !token) return;
@@ -173,7 +210,7 @@ export default function GamePage() {
 
   useEffect(() => {
     refreshTimeline();
-  }, [refreshTimeline]);
+  }, [refreshTimeline, timelineNodeLimit]);
 
   async function handleResign() {
     if (!token || !activeGameId || resigning) return;

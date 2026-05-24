@@ -153,6 +153,7 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	}
 
 	fen := game.Position().String()
+	turnNumber := parentNode.TurnNumber + 1
 
 	promotion := ""
 	if selected.Promo() != chess.NoPieceType {
@@ -192,11 +193,15 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	s.hub.Broadcast(c.gameID, WSMessage{
 		Type: "move",
 		Payload: map[string]interface{}{
-			"id":        nodeID,
-			"player_id": c.userID,
-			"uci":       uci,
-			"san":       san,
-			"fen":       fen,
+			"id":             nodeID,
+			"player_id":      c.userID,
+			"uci":            uci,
+			"san":            san,
+			"fen":            fen,
+			"timeline_id":    resolvedTimelineID,
+			"parent_node_id": parentNode.ID,
+			"turn_number":    turnNumber,
+			"created_at":     time.Now().UTC().Format(time.RFC3339),
 		},
 	})
 }
@@ -360,11 +365,14 @@ func (s *Server) handleRewindMessage(c *Client, msg WSMessage) {
 	s.hub.Broadcast(c.gameID, WSMessage{
 		Type: "timeline_created",
 		Payload: map[string]interface{}{
-			"timeline_id":  timelineID,
-			"root_node_id": rootNodeID,
-			"from_node_id": fromNode.ID,
-			"board_state":  fromNode.BoardState,
-			"turn_number":  fromNode.TurnNumber,
+			"timeline_id":     timelineID,
+			"timeline_name":   branchName,
+			"root_node_id":    rootNodeID,
+			"from_node_id":    fromNode.ID,
+			"board_state":     fromNode.BoardState,
+			"turn_number":     fromNode.TurnNumber,
+			"created_by_user": c.userID,
+			"created_at":      time.Now().UTC().Format(time.RFC3339),
 		},
 	})
 }

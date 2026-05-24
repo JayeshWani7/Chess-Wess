@@ -161,16 +161,32 @@ func (b *BotEngine) playMove(ctx context.Context, game *chess.Game) {
 	nodeID, err := b.server.createGameNode(ctx, b.gameID, b.botUserID, uci, san, "", fen, "", "")
 	if err != nil {
 		log.Printf("bot: failed to create timeline node: %v", err)
+		return
+	}
+
+	node, err := db.GetNode(ctx, b.server.db, nodeID)
+	if err != nil {
+		log.Printf("bot: failed to load node for broadcast: %v", err)
+		return
+	}
+
+	parentNodeID := ""
+	if node.ParentNodeID != nil {
+		parentNodeID = *node.ParentNodeID
 	}
 
 	b.server.hub.Broadcast(b.gameID, WSMessage{
 		Type: "move",
 		Payload: map[string]interface{}{
-			"id":        nodeID,
-			"player_id": b.botUserID,
-			"uci":       uci,
-			"san":       san,
-			"fen":       fen,
+			"id":             nodeID,
+			"player_id":      b.botUserID,
+			"uci":            uci,
+			"san":            san,
+			"fen":            fen,
+			"timeline_id":    node.TimelineID,
+			"parent_node_id": parentNodeID,
+			"turn_number":    node.TurnNumber,
+			"created_at":     node.CreatedAt.UTC().Format(time.RFC3339),
 		},
 	})
 
