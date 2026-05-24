@@ -3,10 +3,54 @@ package db
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ChessWess/backend/models"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/notnil/chess"
 )
+
+const (
+	snapshotIntervalSmall        = 20
+	snapshotIntervalMedium       = 12
+	snapshotIntervalLarge        = 8
+	snapshotIntervalSmallActive  = 12
+	snapshotIntervalMediumActive = 8
+	snapshotIntervalLargeActive  = 6
+
+	smallTimelineMax  = 40
+	mediumTimelineMax = 120
+
+	recentActivityWindow = 2 * time.Minute
+)
+
+func ShouldSnapshotDynamic(turnNumber, timelineSize int, lastMoveAt, now time.Time) bool {
+	if turnNumber <= 0 {
+		return false
+	}
+	interval := snapshotIntervalFor(timelineSize, now.Sub(lastMoveAt) <= recentActivityWindow)
+	return interval > 0 && turnNumber%interval == 0
+}
+
+func snapshotIntervalFor(timelineSize int, isActive bool) int {
+	if isActive {
+		if timelineSize <= smallTimelineMax {
+			return snapshotIntervalSmallActive
+		}
+		if timelineSize <= mediumTimelineMax {
+			return snapshotIntervalMediumActive
+		}
+		return snapshotIntervalLargeActive
+	}
+
+	if timelineSize <= smallTimelineMax {
+		return snapshotIntervalSmall
+	}
+	if timelineSize <= mediumTimelineMax {
+		return snapshotIntervalMedium
+	}
+	return snapshotIntervalLarge
+}
 
 func CreateTimeline(ctx context.Context, pool *pgxpool.Pool, gameID, createdByUser, timelineName string) (string, error) {
 	var timelineID string
@@ -46,8 +90,8 @@ func CreateRootNode(ctx context.Context, pool *pgxpool.Pool,
 	err := pool.QueryRow(ctx,
 		`INSERT INTO game_nodes 
 		 (game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion, 
-		  board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
-		 VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, 0, $4, FALSE, FALSE, FALSE, NULL)
+		  board_state, is_snapshot, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
+		 VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, TRUE, 0, $4, FALSE, FALSE, FALSE, NULL)
 		 RETURNING id`,
 		gameID, timelineID, initialFEN, createdByUser,
 	).Scan(&nodeID)
@@ -73,8 +117,8 @@ func CreateBranchRootNode(ctx context.Context, pool *pgxpool.Pool,
 	err := pool.QueryRow(ctx,
 		`INSERT INTO game_nodes 
 		 (game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion, 
-		  board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
-		 VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, $4, $5, FALSE, FALSE, FALSE, NULL)
+		  board_state, is_snapshot, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
+		 VALUES ($1, $2, NULL, NULL, NULL, NULL, $3, TRUE, $4, $5, FALSE, FALSE, FALSE, NULL)
 		 RETURNING id`,
 		gameID, timelineID, boardState, turnNumber, createdByUser,
 	).Scan(&nodeID)
@@ -96,6 +140,14 @@ func CreateBranchRootNode(ctx context.Context, pool *pgxpool.Pool,
 func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, parentNodeID string) (string, error) {
 	var nodeID string
 
+	var snapshotFEN *string
+	if node.IsSnapshot {
+		snapshotFEN = node.SnapshotFEN
+		if snapshotFEN == nil && node.BoardState != "" {
+			snapshotFEN = &node.BoardState
+		}
+	}
+
 	promotion := ""
 	if node.Move != nil && node.Move.Promotion != "" {
 		promotion = node.Move.Promotion
@@ -104,12 +156,12 @@ func CreateNode(ctx context.Context, pool *pgxpool.Pool, node *models.GameNode, 
 	err := pool.QueryRow(ctx,
 		`INSERT INTO game_nodes 
 		 (game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
-		  board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		  board_state, is_snapshot, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		 RETURNING id`,
 		node.GameID, node.TimelineID, &parentNodeID,
 		node.Move.UCI, node.Move.SAN, promotion,
-		node.BoardState, node.TurnNumber, node.CreatedByUser,
+		snapshotFEN, node.IsSnapshot, node.TurnNumber, node.CreatedByUser,
 		node.Metadata.Check, node.Metadata.Checkmate, node.Metadata.Stalemate,
 		node.Metadata.Captured,
 	).Scan(&nodeID)
@@ -141,40 +193,14 @@ func LinkNodeChild(ctx context.Context, pool *pgxpool.Pool, parentNodeID, childN
 }
 
 func GetNode(ctx context.Context, pool *pgxpool.Pool, nodeID string) (*models.GameNode, error) {
-	var node models.GameNode
-	var moveUCI, moveSAN, promotion, capturedPiece *string
-
-	err := pool.QueryRow(ctx,
-		`SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
-		        board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, 
-		        evaluation, captured_piece, created_at
-		 FROM game_nodes WHERE id = $1`,
-		nodeID,
-	).Scan(
-		&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
-		&moveUCI, &moveSAN, &promotion,
-		&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
-		&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
-		&node.Metadata.Evaluation, &capturedPiece,
-		&node.CreatedAt,
-	)
+	path, err := GetNodePath(ctx, pool, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("GetNode: %w", err)
 	}
-
-	if moveUCI != nil && *moveUCI != "" {
-		node.Move = &models.Move{
-			UCI:       *moveUCI,
-			SAN:       *moveSAN,
-			Promotion: *promotion,
-		}
+	if len(path.Nodes) == 0 {
+		return nil, fmt.Errorf("GetNode: no node found")
 	}
-
-	if capturedPiece != nil {
-		node.Metadata.Captured = *capturedPiece
-	}
-
-	return &node, nil
+	return &path.Nodes[len(path.Nodes)-1], nil
 }
 
 func GetNodePath(ctx context.Context, pool *pgxpool.Pool, targetNodeID string) (*models.GameNodePath, error) {
@@ -188,7 +214,7 @@ func GetNodePath(ctx context.Context, pool *pgxpool.Pool, targetNodeID string) (
 		   INNER JOIN path p ON gn.id = p.parent_node_id
 		 )
 		 SELECT gn.id, gn.game_id, gn.timeline_id, gn.parent_node_id, gn.move_uci, gn.move_san, 
-		        gn.move_promotion, gn.board_state, gn.turn_number, gn.created_by_user, 
+		        gn.move_promotion, gn.board_state, gn.is_snapshot, gn.turn_number, gn.created_by_user, 
 		        gn.is_check, gn.is_checkmate, gn.is_stalemate, gn.evaluation, 
 		        gn.captured_piece, gn.created_at
 		 FROM game_nodes gn
@@ -205,11 +231,13 @@ func GetNodePath(ctx context.Context, pool *pgxpool.Pool, targetNodeID string) (
 	for rows.Next() {
 		var node models.GameNode
 		var moveUCI, moveSAN, promotion, capturedPiece *string
+		var snapshotFEN *string
+		var isSnapshot bool
 
 		err := rows.Scan(
 			&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
 			&moveUCI, &moveSAN, &promotion,
-			&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
+			&snapshotFEN, &isSnapshot, &node.TurnNumber, &node.CreatedByUser,
 			&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
 			&node.Metadata.Evaluation, &capturedPiece,
 			&node.CreatedAt,
@@ -229,6 +257,9 @@ func GetNodePath(ctx context.Context, pool *pgxpool.Pool, targetNodeID string) (
 			node.Metadata.Captured = *capturedPiece
 		}
 
+		node.SnapshotFEN = snapshotFEN
+		node.IsSnapshot = isSnapshot
+
 		nodes = append(nodes, node)
 	}
 
@@ -236,10 +267,11 @@ func GetNodePath(ctx context.Context, pool *pgxpool.Pool, targetNodeID string) (
 		return nil, fmt.Errorf("GetNodePath: no path found")
 	}
 
-	return &models.GameNodePath{
-		Nodes: nodes,
-		Count: len(nodes),
-	}, nil
+	if err := hydrateNodePath(nodes); err != nil {
+		return nil, fmt.Errorf("GetNodePath hydrate: %w", err)
+	}
+
+	return &models.GameNodePath{Nodes: nodes, Count: len(nodes)}, nil
 }
 
 func GetNodeBranches(ctx context.Context, pool *pgxpool.Pool, parentNodeID string) ([]models.NodeBranch, error) {
@@ -282,7 +314,7 @@ func GetNodeBranches(ctx context.Context, pool *pgxpool.Pool, parentNodeID strin
 func GetTimelineNodes(ctx context.Context, pool *pgxpool.Pool, timelineID string) ([]models.GameNode, error) {
 	rows, err := pool.Query(ctx,
 		`SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
-		        board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate,
+		        board_state, is_snapshot, turn_number, created_by_user, is_check, is_checkmate, is_stalemate,
 		        evaluation, captured_piece, created_at
 		 FROM game_nodes
 		 WHERE timeline_id = $1
@@ -298,11 +330,13 @@ func GetTimelineNodes(ctx context.Context, pool *pgxpool.Pool, timelineID string
 	for rows.Next() {
 		var node models.GameNode
 		var moveUCI, moveSAN, promotion, capturedPiece *string
+		var snapshotFEN *string
+		var isSnapshot bool
 
 		err := rows.Scan(
 			&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
 			&moveUCI, &moveSAN, &promotion,
-			&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
+			&snapshotFEN, &isSnapshot, &node.TurnNumber, &node.CreatedByUser,
 			&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
 			&node.Metadata.Evaluation, &capturedPiece,
 			&node.CreatedAt,
@@ -322,7 +356,14 @@ func GetTimelineNodes(ctx context.Context, pool *pgxpool.Pool, timelineID string
 			node.Metadata.Captured = *capturedPiece
 		}
 
+		node.SnapshotFEN = snapshotFEN
+		node.IsSnapshot = isSnapshot
+
 		nodes = append(nodes, node)
+	}
+
+	if err := hydrateNodePath(nodes); err != nil {
+		return nil, fmt.Errorf("GetTimelineNodes hydrate: %w", err)
 	}
 
 	return nodes, nil
@@ -345,13 +386,24 @@ func GetTimelineNodesWindow(ctx context.Context, pool *pgxpool.Pool, timelineID 
 		   SELECT COALESCE(MAX(turn_number), 0) AS max_turn
 		   FROM game_nodes
 		   WHERE timeline_id = $1
+		 ),
+		 window_start AS (
+		   SELECT GREATEST(max_turn - $2 + 1, 0) AS start_turn
+		   FROM max_turn
+		 ),
+		 snapshot_start AS (
+		   SELECT COALESCE(MAX(turn_number), 0) AS snapshot_turn
+		   FROM game_nodes, window_start
+		   WHERE timeline_id = $1
+		     AND is_snapshot = TRUE
+		     AND turn_number <= window_start.start_turn
 		 )
 		 SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
-		        board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate,
+		        board_state, is_snapshot, turn_number, created_by_user, is_check, is_checkmate, is_stalemate,
 		        evaluation, captured_piece, created_at
-		 FROM game_nodes, max_turn
+		 FROM game_nodes, snapshot_start
 		 WHERE timeline_id = $1
-		   AND (turn_number = 0 OR turn_number >= GREATEST(max_turn - $2 + 1, 0))
+		   AND turn_number >= snapshot_start.snapshot_turn
 		 ORDER BY turn_number ASC`,
 		timelineID, nodeLimit,
 	)
@@ -364,11 +416,13 @@ func GetTimelineNodesWindow(ctx context.Context, pool *pgxpool.Pool, timelineID 
 	for rows.Next() {
 		var node models.GameNode
 		var moveUCI, moveSAN, promotion, capturedPiece *string
+		var snapshotFEN *string
+		var isSnapshot bool
 
 		err := rows.Scan(
 			&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
 			&moveUCI, &moveSAN, &promotion,
-			&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
+			&snapshotFEN, &isSnapshot, &node.TurnNumber, &node.CreatedByUser,
 			&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
 			&node.Metadata.Evaluation, &capturedPiece,
 			&node.CreatedAt,
@@ -388,58 +442,81 @@ func GetTimelineNodesWindow(ctx context.Context, pool *pgxpool.Pool, timelineID 
 			node.Metadata.Captured = *capturedPiece
 		}
 
+		node.SnapshotFEN = snapshotFEN
+		node.IsSnapshot = isSnapshot
+
 		nodes = append(nodes, node)
+	}
+
+	if err := hydrateNodePath(nodes); err != nil {
+		return nil, fmt.Errorf("GetTimelineNodesWindow hydrate: %w", err)
 	}
 
 	return nodes, nil
 }
 
 func GetLatestTimelineNode(ctx context.Context, pool *pgxpool.Pool, timelineID string) (*models.GameNode, error) {
-	rows, err := pool.Query(ctx,
-		`SELECT id, game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
-		        board_state, turn_number, created_by_user, is_check, is_checkmate, is_stalemate,
-		        evaluation, captured_piece, created_at
-		 FROM game_nodes
-		 WHERE timeline_id = $1
-		 ORDER BY turn_number DESC
-		 LIMIT 1`,
+	var nodeID string
+	if err := pool.QueryRow(ctx,
+		`SELECT id FROM game_nodes WHERE timeline_id = $1 ORDER BY turn_number DESC LIMIT 1`,
 		timelineID,
-	)
-	if err != nil {
+	).Scan(&nodeID); err != nil {
 		return nil, fmt.Errorf("GetLatestTimelineNode: %w", err)
 	}
-	defer rows.Close()
+	return GetNode(ctx, pool, nodeID)
+}
 
-	if !rows.Next() {
-		return nil, fmt.Errorf("GetLatestTimelineNode: no nodes found")
-	}
+func hydrateNodePath(nodes []models.GameNode) error {
+	var game *chess.Game
 
-	var node models.GameNode
-	var moveUCI, moveSAN, promotion, capturedPiece *string
+	for i := range nodes {
+		node := &nodes[i]
 
-	if err := rows.Scan(
-		&node.ID, &node.GameID, &node.TimelineID, &node.ParentNodeID,
-		&moveUCI, &moveSAN, &promotion,
-		&node.BoardState, &node.TurnNumber, &node.CreatedByUser,
-		&node.Metadata.Check, &node.Metadata.Checkmate, &node.Metadata.Stalemate,
-		&node.Metadata.Evaluation, &capturedPiece,
-		&node.CreatedAt,
-	); err != nil {
-		return nil, fmt.Errorf("GetLatestTimelineNode scan: %w", err)
-	}
+		if node.SnapshotFEN != nil && *node.SnapshotFEN != "" && node.IsSnapshot {
+			fenOpt, err := chess.FEN(*node.SnapshotFEN)
+			if err != nil {
+				return fmt.Errorf("snapshot fen invalid: %w", err)
+			}
+			game = chess.NewGame(fenOpt)
+			node.BoardState = *node.SnapshotFEN
+			continue
+		}
 
-	if moveUCI != nil && *moveUCI != "" {
-		node.Move = &models.Move{
-			UCI:       *moveUCI,
-			SAN:       *moveSAN,
-			Promotion: *promotion,
+		if game == nil {
+			if node.SnapshotFEN != nil && *node.SnapshotFEN != "" {
+				fenOpt, err := chess.FEN(*node.SnapshotFEN)
+				if err != nil {
+					return fmt.Errorf("snapshot fen invalid: %w", err)
+				}
+				game = chess.NewGame(fenOpt)
+				node.BoardState = *node.SnapshotFEN
+				continue
+			}
+			return fmt.Errorf("missing snapshot for path")
+		}
+
+		if node.Move != nil && node.Move.UCI != "" {
+			if err := applyUCIMove(game, node.Move.UCI); err != nil {
+				return fmt.Errorf("apply move: %w", err)
+			}
+		}
+
+		if game != nil {
+			node.BoardState = game.Position().String()
 		}
 	}
-	if capturedPiece != nil {
-		node.Metadata.Captured = *capturedPiece
-	}
 
-	return &node, nil
+	return nil
+}
+
+func applyUCIMove(game *chess.Game, uci string) error {
+	pos := game.Position()
+	for _, mv := range game.ValidMoves() {
+		if (chess.UCINotation{}).Encode(pos, mv) == uci {
+			return game.Move(mv)
+		}
+	}
+	return fmt.Errorf("illegal move: %s", uci)
 }
 
 func GetGameTimelines(ctx context.Context, pool *pgxpool.Pool, gameID string) ([]models.Timeline, error) {

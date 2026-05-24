@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-
 	"github.com/ChessWess/backend/models"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

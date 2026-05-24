@@ -18,6 +18,8 @@ type GameNode struct {
 	ParentNodeID  *string          `json:"parent_node_id"`
 	Move          *Move            `json:"move"`
 	BoardState    string           `json:"board_state"`
+	SnapshotFEN   *string          `json:"-"`
+	IsSnapshot    bool             `json:"-"`
 	TurnNumber    int              `json:"turn_number"`
 	CreatedByUser string           `json:"created_by_user"`
 	Metadata      GameNodeMetadata `json:"metadata"`

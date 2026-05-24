@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/ChessWess/backend/db"
 	"github.com/ChessWess/backend/models"
@@ -241,19 +242,29 @@ func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, p
 	}
 
 	resolvedParentID := parentNode.ID
+	turnNumber := parentNode.TurnNumber + 1
+	nodeCount, err := db.GetTimelineNodeCount(ctx, s.db, resolvedTimelineID)
+	if err != nil {
+		return "", fmt.Errorf("createGameNode count: %w", err)
+	}
+	timelineSize := nodeCount + 1
 	nodeData := &models.GameNode{
 		GameID:        gameID,
 		TimelineID:    resolvedTimelineID,
 		ParentNodeID:  &resolvedParentID,
 		Move:          &models.Move{UCI: uci, SAN: san, Promotion: promotion},
-		BoardState:    fen,
-		TurnNumber:    parentNode.TurnNumber + 1,
+		TurnNumber:    turnNumber,
 		CreatedByUser: userID,
 		Metadata: models.GameNodeMetadata{
 			Check:     isCheck,
 			Checkmate: isCheckmate,
 			Stalemate: isStalemate,
 		},
+	}
+
+	if db.ShouldSnapshotDynamic(turnNumber, timelineSize, parentNode.CreatedAt, time.Now()) {
+		nodeData.IsSnapshot = true
+		nodeData.SnapshotFEN = &fen
 	}
 
 	return db.CreateNode(ctx, s.db, nodeData, resolvedParentID)

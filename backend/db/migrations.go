@@ -17,6 +17,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		alterTimelinesAddName,
 		alterGamesAddActiveTimeline,
 		createGameNodesTable,
+		alterGameNodesForSnapshots,
 		createNodeChildrenTable,
 		createPlayerEnergyTable,
 		createEnergyTransactionsTable,
@@ -138,7 +139,8 @@ CREATE TABLE IF NOT EXISTS game_nodes (
   move_uci         VARCHAR(6),
   move_san         VARCHAR(10),
   move_promotion   VARCHAR(1),
-  board_state      TEXT NOT NULL,
+  board_state      TEXT,
+  is_snapshot      BOOLEAN NOT NULL DEFAULT FALSE,
   turn_number      INT NOT NULL,
   created_by_user  UUID NOT NULL REFERENCES users(id),
 
@@ -156,6 +158,24 @@ CREATE INDEX IF NOT EXISTS idx_game_nodes_game_id ON game_nodes(game_id);
 CREATE INDEX IF NOT EXISTS idx_game_nodes_timeline_id ON game_nodes(timeline_id);
 CREATE INDEX IF NOT EXISTS idx_game_nodes_parent_id ON game_nodes(parent_node_id);
 CREATE INDEX IF NOT EXISTS idx_game_nodes_turn ON game_nodes(timeline_id, turn_number);
+`
+
+const alterGameNodesForSnapshots = `
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='game_nodes' AND column_name='board_state' AND is_nullable='NO'
+  ) THEN
+    ALTER TABLE game_nodes ALTER COLUMN board_state DROP NOT NULL;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='game_nodes' AND column_name='is_snapshot'
+  ) THEN
+    ALTER TABLE game_nodes ADD COLUMN is_snapshot BOOLEAN NOT NULL DEFAULT FALSE;
+  END IF;
+END $$;
 `
 
 const createNodeChildrenTable = `
