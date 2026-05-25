@@ -1,7 +1,9 @@
 import { useMemo } from "react";
+import dagre from "dagre";
 import ReactFlow, {
   Background,
   Controls,
+  MiniMap,
   type Edge,
   type Node,
   type NodeMouseHandler,
@@ -18,6 +20,52 @@ interface TimelineGraphProps {
 
 const NODE_X_STEP = 160;
 const NODE_Y_STEP = 120;
+const NODE_WIDTH = 132;
+const NODE_HEIGHT = 48;
+const EVAL_CLAMP = 6;
+
+const dagreGraph = new dagre.graphlib.Graph();
+dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+function evaluationColor(score?: number | null) {
+  if (typeof score !== "number") return "#c8c1b2";
+  const clamped = Math.max(-EVAL_CLAMP, Math.min(EVAL_CLAMP, score));
+  const normalized = (clamped + EVAL_CLAMP) / (EVAL_CLAMP * 2);
+  const hue = 120 * normalized;
+  return `hsl(${hue} 55% 48%)`;
+}
+
+function layoutDag(nodes: Node[], edges: Edge[]) {
+  dagreGraph.setGraph({
+    rankdir: "LR",
+    ranksep: NODE_X_STEP,
+    nodesep: NODE_Y_STEP,
+  });
+
+  nodes.forEach((node) => {
+    dagreGraph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  });
+
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(edge.source, edge.target);
+  });
+
+  dagre.layout(dagreGraph);
+
+  const layoutedNodes = nodes.map((node) => {
+    const layoutNode = dagreGraph.node(node.id);
+    if (!layoutNode) return node;
+    return {
+      ...node,
+      position: {
+        x: layoutNode.x - NODE_WIDTH / 2,
+        y: layoutNode.y - NODE_HEIGHT / 2,
+      },
+    };
+  });
+
+  return { nodes: layoutedNodes, edges };
+}
 
 function buildBranchEdges(nodes: TimelineNode[], nodeIds: Set<string>): Edge[] {
   const edges: Edge[] = [];
@@ -79,25 +127,35 @@ export default function TimelineGraph({
     for (const node of allNodes) {
       const x = node.turn_number * NODE_X_STEP;
       const y = (timelineIndex.get(node.timeline_id) ?? 0) * NODE_Y_STEP;
+      const evalColor = evaluationColor(node.metadata?.evaluation ?? null);
+      const isActive = node.timeline_id === activeTimelineId;
+      const isSelected = node.id === selectedNodeId;
 
       rfNodes.push({
         id: node.id,
         position: { x, y },
         data: {
           label: node.move?.san ?? (node.turn_number === 0 ? "Root" : `T${node.turn_number}`),
+          evaluation: node.metadata?.evaluation ?? null,
         },
         style: {
-          background: node.timeline_id === activeTimelineId ? "#f2e8d5" : "#fcf8f1",
-          border:
-            node.id === selectedNodeId
-              ? "2px solid #c9a227"
-              : node.timeline_id === activeTimelineId
-              ? "1px solid #4b7a2c"
-              : "1px solid #d9cfbf",
+          background: isActive ? "#f2e8d5" : "#fcf8f1",
+          border: isSelected
+            ? "2px solid #c9a227"
+            : isActive
+            ? "1px solid #4b7a2c"
+            : `1px solid ${evalColor}`,
+          boxShadow: isSelected ? `0 0 0 2px ${evalColor}40` : "none",
           color: "#1b1e1a",
           padding: "6px 10px",
           borderRadius: 10,
           fontSize: 12,
+          width: NODE_WIDTH,
+          height: NODE_HEIGHT,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          textAlign: "center",
         },
       });
 
@@ -112,10 +170,7 @@ export default function TimelineGraph({
       }
     }
 
-    return {
-      nodes: rfNodes,
-      edges: [...rfEdges, ...buildBranchEdges(allNodes, nodeIds)],
-    };
+    return layoutDag(rfNodes, [...rfEdges, ...buildBranchEdges(allNodes, nodeIds)]);
   }, [timelines, activeTimelineId, selectedNodeId]);
 
   return (
@@ -124,11 +179,30 @@ export default function TimelineGraph({
         nodes={nodes}
         edges={edges}
         fitView
+        fitViewOptions={{ padding: 0.15 }}
+        minZoom={0.2}
+        maxZoom={1.6}
         nodesDraggable={false}
         nodesConnectable={false}
         onNodeClick={handleNodeClick}
+        panOnScroll
+        onlyRenderVisibleElements
       >
         <Background gap={24} color="#e6dcc8" />
+        <MiniMap
+          position="bottom-right"
+          pannable
+          zoomable
+          nodeStrokeWidth={2}
+          nodeColor={(node) => {
+            const score = (node.data as { evaluation?: number }).evaluation;
+            return evaluationColor(score);
+          }}
+          nodeStrokeColor={(node) => {
+            if (node.id === selectedNodeId) return "#c9a227";
+            return "#8a8f85";
+          }}
+        />
         <Controls position="top-right" />
       </ReactFlow>
     </div>

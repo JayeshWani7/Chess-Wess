@@ -4,13 +4,14 @@ import { useAuthStore } from "../store/authStore";
 import { wsClient, type WSMessage } from "../utils/wsClient";
 import { api } from "../utils/api";
 import { useEnergy } from "../hooks/useEnergy";
+import { calculateRewindCost } from "../utils/energy";
 import ChessBoard from "../components/Board/ChessBoard";
 import MoveHistory from "../components/Game/MoveHistory";
 import PlayerClock from "../components/Game/PlayerClock";
 import GameStatus from "../components/Game/GameStatus";
 import GameOverModal from "../components/Game/GameOverModal";
 import TimelinePanel from "../components/Timeline/TimelinePanel";
-import { EnergyPanel, OpponentEnergyPanel } from "../components/Energy/EnergyPanel";
+import { EnergyPanel, EnergyNotification, OpponentEnergyPanel } from "../components/Energy/EnergyPanel";
 
 export default function GamePage() {
   const {
@@ -36,6 +37,7 @@ export default function GamePage() {
     setPlayerColor,
     setPlayerEnergy,
     setOpponentEnergy,
+    playerEnergy,
   } = useGameStore();
 
   const { rewindTimeline, jumpTimeline } = useEnergy();
@@ -46,12 +48,35 @@ export default function GamePage() {
   const [isOpponentBot, setIsOpponentBot] = useState(false);
   const [opponentBotRating, setOpponentBotRating] = useState(0);
   const [timelineNodeLimit, setTimelineNodeLimit] = useState<number | null>(200);
+  const [energyToast, setEnergyToast] = useState<{
+    message: string;
+    type: "warning" | "error" | "info";
+  } | null>(null);
   const timelineLimitRef = useRef<number | null>(200);
   const connectedRef = useRef(false);
+  const toastTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     timelineLimitRef.current = timelineNodeLimit;
   }, [timelineNodeLimit]);
+
+  useEffect(() => {
+    if (!energyToast) return;
+    if (toastTimerRef.current) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setEnergyToast(null);
+      toastTimerRef.current = null;
+    }, 3200);
+
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
+  }, [energyToast]);
 
   const refreshTimeline = useCallback(async () => {
     if (!token || !activeGameId) return;
@@ -248,8 +273,22 @@ export default function GamePage() {
 
     const turnsBack = Math.max(0, activeNode.turn_number - targetNode.turn_number);
     if (turnsBack > 0) {
+      const cost = calculateRewindCost(turnsBack);
+      if (playerEnergy && playerEnergy.energy_remaining < cost) {
+        setEnergyToast({
+          message: `Insufficient energy to rewind ${turnsBack} turn${turnsBack === 1 ? "" : "s"}. Need ${cost}, have ${playerEnergy.energy_remaining}.`,
+          type: "warning",
+        });
+        return;
+      }
       const ok = await rewindTimeline(turnsBack, targetNode.timeline_id);
-      if (!ok) return;
+      if (!ok) {
+        setEnergyToast({
+          message: "Unable to rewind and branch right now. Please try again.",
+          type: "error",
+        });
+        return;
+      }
     }
 
     wsClient.sendRewind(nodeId);
@@ -281,7 +320,16 @@ export default function GamePage() {
   const blackName = playerColor === "b" ? (username ?? "You") : opponentName;
 
   return (
-    <div className="space-y-6">
+    <div className="relative space-y-6">
+      {energyToast && (
+        <div className="fixed right-6 top-20 z-50 w-[320px] max-w-[90vw]">
+          <EnergyNotification
+            message={energyToast.message}
+            type={energyToast.type}
+            onDismiss={() => setEnergyToast(null)}
+          />
+        </div>
+      )}
       <header className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-moss">Active Game</p>
