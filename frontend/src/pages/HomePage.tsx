@@ -109,15 +109,17 @@ export default function HomePage() {
           )}
         </div>
 
-        <div className="card">
-          <div className="space-y-3">
-            <p className="text-xs uppercase tracking-[0.3em] text-moss">Featured Replay</p>
-            <h3 className="text-xl font-display text-ink">The Sacrificial Queen</h3>
-            <p className="text-sm text-ink/70">
+        <div className="card p-6">
+          <div className="flex flex-col gap-4">
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-[0.3em] text-moss">Featured Replay</p>
+              <h3 className="text-xl font-display text-ink">The Sacrificial Queen</h3>
+            </div>
+            <p className="text-sm text-ink/70 leading-relaxed">
               A bold rewind that flips the entire board. Explore decisive
               branches and see how the multiverse collapses.
             </p>
-            <Link to="/history" className="btn-primary text-sm">
+            <Link to="/history" className="btn-primary inline-flex w-fit text-sm">
               Watch replay
             </Link>
           </div>
