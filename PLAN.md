@@ -504,6 +504,162 @@ Phase 5+ (Feature layers)
 
 ---
 
+## Current Optimization Challenges
+
+These are challenges visible in the current implementation that should be optimized alongside the roadmap. They are not all new features; many are reliability, scalability, and production-readiness improvements that will make the timeline mechanics safer to build on.
+
+### Challenge 1: Plan Drift vs Implementation Drift
+**Problem**: The current codebase already includes pieces from later phases, such as bot games, timeline metadata, energy tables, snapshots, and branching logic, while the plan still lists some of these as future work.
+
+**Optimization**:
+- Track each feature as `not started`, `partial`, `implemented`, or `needs optimization`.
+- Add a short status note per phase before starting new work.
+- Keep the MVP scope focused on the features that are actually playable end-to-end.
+
+### Challenge 2: Timeline Branching Consistency
+**Problem**: Rewind and branching exist, but the plan needs stricter gameplay rules for when and how branches can be created.
+
+**Optimization**:
+- Define who can rewind and when.
+- Decide whether branching should automatically switch the active timeline.
+- Block branch creation from locked, collapsed, completed, or invalid timelines.
+- Specify behavior after checkmate, stalemate, resignation, and timeout.
+
+### Challenge 3: Atomic Move Handling
+**Problem**: A move can involve validation, node creation, energy changes, active timeline updates, and game-over checks. If these are not handled atomically, partial state can leak into the game.
+
+**Optimization**:
+- Wrap move creation, energy spending, timeline updates, and game completion in database transactions.
+- Make repeated move submissions idempotent where possible.
+- Return consistent errors when a move loses a race against another client.
+
+### Challenge 4: WebSocket Reliability
+**Problem**: Realtime sync currently depends on broadcast messages. If a client disconnects or misses a message, its local timeline graph can drift from the server.
+
+**Optimization**:
+- Add reconnect recovery and state resync.
+- Add server sequence numbers to game events.
+- Make move, rewind, and timeline-switch messages idempotent.
+- Define a slow-client strategy: drop, resync, or disconnect with a recoverable error.
+
+### Challenge 5: Security and Access Control
+**Problem**: A valid token plus a game ID should not automatically allow a user to send gameplay events for that game.
+
+**Optimization**:
+- Verify that the user is a player, bot participant owner, or authorized spectator before joining a WebSocket room.
+- Validate permissions per event type.
+- Prevent non-players from moving, rewinding, locking timelines, or switching active competitive state.
+
+### Challenge 6: CORS and Origin Policy
+**Problem**: WebSocket origin checks are currently permissive, which is useful for local development but unsafe for production.
+
+**Optimization**:
+- Configure allowed origins by environment.
+- Keep local development permissive only when explicitly enabled.
+- Add deployment checks so production cannot start with unsafe origin settings.
+
+### Challenge 7: Server-Authoritative Timers
+**Problem**: Frontend clocks are useful for display, but competitive timers must be controlled by the server.
+
+**Optimization**:
+- Store clock state on the server.
+- Update time during accepted moves, resignations, disconnects, and timeout checks.
+- Broadcast authoritative clock snapshots.
+- Add timeout handling as a first-class game result.
+
+### Challenge 8: Bot Lifecycle Management
+**Problem**: Bot games start background engine work, but the plan should cover how that work stops, retries, and avoids duplicate runners.
+
+**Optimization**:
+- Cancel bot workers when games end or are abandoned.
+- Prevent multiple bot engines from controlling the same bot in one game.
+- Add bot move delay, rate limits, and error recovery.
+- Log bot failures with enough context to debug invalid positions or missed turns.
+
+### Challenge 9: Database Migration Maturity
+**Problem**: Embedded `CREATE IF NOT EXISTS` migrations are convenient early, but production needs versioned, repeatable schema changes.
+
+**Optimization**:
+- Move to versioned migrations before beta.
+- Add migration rollback or forward-fix guidance.
+- Test migrations against a copy of realistic data.
+- Document required extensions such as `gen_random_uuid()`.
+
+### Challenge 10: Board-State Snapshot Strategy
+**Problem**: Snapshotting is already present, but the rules for when to store full board state versus reconstruct from history should be explicit.
+
+**Optimization**:
+- Define snapshot frequency based on turn count, timeline size, and replay cost.
+- Cap maximum reconstruction depth.
+- Benchmark path reconstruction for large games.
+- Compress or archive completed games without losing deterministic replay.
+
+### Challenge 11: Graph Query Scalability
+**Problem**: Timeline APIs can become expensive as the number of timelines and nodes grows.
+
+**Optimization**:
+- Batch node counts and node-window queries.
+- Avoid per-timeline N+1 query patterns.
+- Add pagination or viewport-based graph loading.
+- Cache graph summaries for active games.
+
+### Challenge 12: Frontend Memory Growth
+**Problem**: The frontend stores loaded timelines and nodes in memory. Large multiverse games can make the client slow even if the server is fast.
+
+**Optimization**:
+- Load only visible or recently used graph regions.
+- Evict cold timelines from client memory.
+- Keep selected node, active path, and graph summary separate from full node history.
+- Add render budgets for large React Flow graphs.
+
+### Challenge 13: Linear Moves vs Timeline Nodes
+**Problem**: The app has both `game_moves` and `game_nodes`. The plan should identify which source is canonical as timeline chess becomes the primary mode.
+
+**Optimization**:
+- Decide whether `game_nodes` becomes the source of truth for all moves.
+- Keep `game_moves` only for compatibility, summaries, or standard chess mode if needed.
+- Avoid writing divergent move histories.
+- Document migration strategy for existing games.
+
+### Challenge 14: Game Rule Clarity
+**Problem**: The final win condition affects database design, UI, energy costs, matchmaking, and competitive integrity.
+
+**Optimization**:
+- Choose an MVP win condition early.
+- Compare options: checkmate in any timeline, active timeline only, majority timeline control, or score-based result.
+- Document draw, resignation, timeout, and collapsed-timeline outcomes.
+- Ensure the UI always explains the current win state clearly.
+
+### Challenge 15: Observability
+**Problem**: Timeline bugs are difficult to debug without structured metrics and event traces.
+
+**Optimization**:
+- Track move latency, rewind latency, DB query time, WebSocket disconnects, and failed move validations.
+- Log game ID, timeline ID, node ID, and event sequence for important operations.
+- Add lightweight health checks for database, Redis, and WebSocket readiness.
+- Create dashboards before closed beta.
+
+### Challenge 16: Testing Gap
+**Problem**: Timeline mechanics create many edge cases that manual testing will miss.
+
+**Optimization**:
+- Add tests for legal move validation, branching from historical nodes, and concurrent move submissions.
+- Test energy spending, refunds, locked timelines, and collapsed timelines.
+- Add replay determinism tests.
+- Add frontend tests for timeline switching, selected node replay, and reconnect resync.
+
+### Challenge 17: Production Readiness
+**Problem**: The app needs hardening before public or competitive play.
+
+**Optimization**:
+- Validate required environment variables at startup.
+- Enforce secure JWT secret handling.
+- Add request size limits and rate limiting.
+- Tune database connection pools.
+- Add graceful shutdown for HTTP, WebSocket, and bot workers.
+
+---
+
 ## MVP Scope (Minimum Viable Product)
 
 ### What to Ship

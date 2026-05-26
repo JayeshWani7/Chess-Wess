@@ -10,6 +10,7 @@ import MoveHistory from "../components/Game/MoveHistory";
 import PlayerClock from "../components/Game/PlayerClock";
 import GameStatus from "../components/Game/GameStatus";
 import GameOverModal from "../components/Game/GameOverModal";
+import RulesModal from "../components/Game/RulesModal";
 import TimelinePanel from "../components/Timeline/TimelinePanel";
 import { EnergyPanel, EnergyNotification, OpponentEnergyPanel } from "../components/Energy/EnergyPanel";
 
@@ -48,6 +49,7 @@ export default function GamePage() {
   const [isOpponentBot, setIsOpponentBot] = useState(false);
   const [opponentBotRating, setOpponentBotRating] = useState(0);
   const [timelineNodeLimit, setTimelineNodeLimit] = useState<number | null>(200);
+  const [showRules, setShowRules] = useState(false);
   const [energyToast, setEnergyToast] = useState<{
     message: string;
     type: "warning" | "error" | "info";
@@ -59,6 +61,14 @@ export default function GamePage() {
   useEffect(() => {
     timelineLimitRef.current = timelineNodeLimit;
   }, [timelineNodeLimit]);
+
+  useEffect(() => {
+    if (!activeGameId) return;
+    const key = `chesswess.rules.v1.seen:${userId ?? "anon"}`;
+    if (window.localStorage.getItem(key) !== "true") {
+      setShowRules(true);
+    }
+  }, [activeGameId, userId]);
 
   useEffect(() => {
     if (!energyToast) return;
@@ -253,6 +263,12 @@ export default function GamePage() {
     leaveGame();
   }
 
+  function handleCloseRules() {
+    const key = `chesswess.rules.v1.seen:${userId ?? "anon"}`;
+    window.localStorage.setItem(key, "true");
+    setShowRules(false);
+  }
+
   async function handleSwitchTimeline(timelineId: string) {
     if (!timelineId) return;
     if (timelineId !== activeTimelineId) {
@@ -340,6 +356,12 @@ export default function GamePage() {
         </div>
         <div className="flex gap-2">
           <button
+            onClick={() => setShowRules(true)}
+            className="btn-outline text-sm"
+          >
+            Rules
+          </button>
+          <button
             onClick={handleResign}
             disabled={resigning || status !== "active"}
             className="btn-danger text-sm"
@@ -405,6 +427,8 @@ export default function GamePage() {
       {status === "completed" && (
         <GameOverModal onRematch={handleLobby} onLobby={handleLobby} />
       )}
+
+      {showRules && <RulesModal onClose={handleCloseRules} />}
 
       <section className="w-full">
         <TimelinePanel
