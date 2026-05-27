@@ -525,6 +525,14 @@ These are challenges visible in the current implementation that should be optimi
 - Block branch creation from locked, collapsed, completed, or invalid timelines.
 - Specify behavior after checkmate, stalemate, resignation, and timeout.
 
+**MVP Rule Set**:
+- Only a seated player can rewind, and only when it is their turn in the target position.
+- Rewind targets must be on the active timeline and within the same game.
+- Rewinding always creates a new timeline branch; no edits to existing nodes.
+- Branch creation auto-switches the active timeline for both players.
+- Branching is blocked from locked or collapsed timelines.
+- After checkmate, stalemate, resignation, or timeout: no new branches (replay-only).
+
 ### Challenge 3: Atomic Move Handling
 **Problem**: A move can involve validation, node creation, energy changes, active timeline updates, and game-over checks. If these are not handled atomically, partial state can leak into the game.
 

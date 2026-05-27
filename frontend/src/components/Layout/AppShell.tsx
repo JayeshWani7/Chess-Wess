@@ -13,6 +13,7 @@ export default function AppShell() {
   const { username, logout } = useAuthStore();
   const activeGameId = useGameStore((s) => s.activeGameId);
   const navigate = useNavigate();
+  const activeGamePath = activeGameId ? `/game/${activeGameId}` : null;
 
   return (
     <div className="min-h-screen">
@@ -37,8 +38,8 @@ export default function AppShell() {
               <NavLink to="/history" className={navItem}>
                 History
               </NavLink>
-              {activeGameId && (
-                <NavLink to="/game" className={navItem}>
+              {activeGamePath && (
+                <NavLink to={activeGamePath} className={navItem}>
                   Game
                 </NavLink>
               )}
@@ -46,9 +47,9 @@ export default function AppShell() {
           </div>
 
           <div className="flex items-center gap-3">
-            {activeGameId && (
+            {activeGamePath && (
               <button
-                onClick={() => navigate("/game")}
+                onClick={() => navigate(activeGamePath)}
                 className="hidden rounded-full border border-leaf bg-leaf/10 px-3 py-1 text-xs font-semibold text-pine md:inline-flex"
               >
                 Active game
@@ -74,8 +75,8 @@ export default function AppShell() {
             <NavLink to="/history" className={navItem}>
               History
             </NavLink>
-            {activeGameId && (
-              <NavLink to="/game" className={navItem}>
+            {activeGamePath && (
+              <NavLink to={activeGamePath} className={navItem}>
                 Game
               </NavLink>
             )}

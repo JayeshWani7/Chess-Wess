@@ -63,7 +63,7 @@ export default function LobbyPage() {
       const game = await api.createGame(token, timeControl, color);
       const playerColor = game.black_player_id === userId ? "b" : "w";
       setActiveGame(game.id, game as Parameters<typeof setActiveGame>[1], playerColor);
-      navigate("/game");
+      navigate(`/game/${game.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create game");
     } finally {
@@ -80,7 +80,7 @@ export default function LobbyPage() {
       const updated = await api.getGame(token, game.id);
       const playerColor = updated.black_player_id === userId ? "b" : "w";
       setActiveGame(updated.id, updated as Parameters<typeof setActiveGame>[1], playerColor);
-      navigate("/game");
+      navigate(`/game/${updated.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join game");
     } finally {
@@ -96,7 +96,7 @@ export default function LobbyPage() {
       const game = await api.createBotGame(token, botTimeControl, botRating, botColor);
       const playerColor = game.black_player_id === userId ? "b" : "w";
       setActiveGame(game.id, game as Parameters<typeof setActiveGame>[1], playerColor);
-      navigate("/game");
+      navigate(`/game/${game.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start bot game");
     } finally {

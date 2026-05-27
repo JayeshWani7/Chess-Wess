@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useGameStore } from "../store/gameStore";
 import { useAuthStore } from "../store/authStore";
 import { wsClient, type WSMessage } from "../utils/wsClient";
@@ -24,6 +25,7 @@ export default function GamePage() {
     leaveGame,
     applyMove,
     setGameOver,
+    setActiveGame,
     setTimelineData,
     addTimelineNode,
     addTimeline,
@@ -44,6 +46,8 @@ export default function GamePage() {
   const { rewindTimeline, jumpTimeline } = useEnergy();
 
   const { token, userId, username } = useAuthStore();
+  const { gameId } = useParams();
+  const navigate = useNavigate();
   const [resigning, setResigning] = useState(false);
   const [opponentName, setOpponentName] = useState("Opponent");
   const [isOpponentBot, setIsOpponentBot] = useState(false);
@@ -61,6 +65,33 @@ export default function GamePage() {
   useEffect(() => {
     timelineLimitRef.current = timelineNodeLimit;
   }, [timelineNodeLimit]);
+
+  useEffect(() => {
+    if (!gameId || !token) return;
+    if (activeGameId === gameId && gameInfo) return;
+
+    let cancelled = false;
+
+    api.getGame(token, gameId)
+      .then((game) => {
+        if (cancelled || !game?.id) return;
+        if (userId && game.white_player_id !== userId && game.black_player_id !== userId) {
+          navigate("/lobby", { replace: true });
+          return;
+        }
+        const playerColor = game.black_player_id === userId ? "b" : "w";
+        setActiveGame(game.id, game as Parameters<typeof setActiveGame>[1], playerColor);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          navigate("/lobby", { replace: true });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId, token, userId, activeGameId, gameInfo, setActiveGame, navigate]);
 
   useEffect(() => {
     if (!activeGameId) return;
@@ -261,6 +292,7 @@ export default function GamePage() {
   function handleLobby() {
     wsClient.disconnect();
     leaveGame();
+    navigate("/lobby");
   }
 
   function handleCloseRules() {
