@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -11,7 +12,14 @@ import (
 	"github.com/ChessWess/backend/db"
 	"github.com/ChessWess/backend/models"
 	"github.com/gorilla/websocket"
+	"github.com/jackc/pgx/v5"
 	"github.com/notnil/chess"
+)
+
+var (
+	errMoveConflict   = errors.New("move conflict")
+	errMoveNotActive  = errors.New("game not active")
+	errTimelineAbsent = errors.New("timeline not found")
 )
 
 var upgrader = websocket.Upgrader{
@@ -153,57 +161,52 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	}
 
 	fen := game.Position().String()
-	turnNumber := parentNode.TurnNumber + 1
 
 	promotion := ""
 	if selected.Promo() != chess.NoPieceType {
 		promotion = selected.Promo().String()
 	}
 
-	nodeID, err := s.createGameNode(ctx, c.gameID, c.userID, uci, san, promotion, fen, resolvedTimelineID, parentNode.ID)
+	moveResult, err := s.applyMoveAtomic(ctx, c.gameID, c.userID, uci, san, promotion, fen, resolvedTimelineID, parentNode.ID)
 	if err != nil {
-		log.Printf("ws: failed to create game node: %v", err)
+		if errors.Is(err, errMoveConflict) {
+			c.send <- mustMarshal(WSMessage{Type: "error", Payload: "move_conflict"})
+			return
+		}
+		if errors.Is(err, errMoveNotActive) {
+			c.send <- mustMarshal(WSMessage{Type: "error", Payload: "game_not_active"})
+			return
+		}
+		if errors.Is(err, errTimelineAbsent) {
+			c.send <- mustMarshal(WSMessage{Type: "error", Payload: "invalid_timeline"})
+			return
+		}
+		log.Printf("ws: failed to apply move: %v", err)
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to save timeline move"})
 		return
-	}
-
-	if result, shouldEnd := outcomeFromFEN(fen); shouldEnd {
-		var winnerArg interface{}
-		winnerID := ""
-		if result == "checkmate" {
-			winnerID = c.userID
-			winnerArg = c.userID
-		}
-		ct, err := s.db.Exec(ctx,
-			`UPDATE games
-			 SET status = 'completed', winner_id = $1, result = $2, updated_at = NOW()
-			 WHERE id = $3 AND status = 'active'`,
-			winnerArg, result, c.gameID,
-		)
-		if err != nil {
-			log.Printf("ws: failed to finalize game: %v", err)
-		} else if ct.RowsAffected() > 0 {
-			s.hub.Broadcast(c.gameID, WSMessage{
-				Type:    "game_over",
-				Payload: map[string]string{"winner_id": winnerID, "result": result},
-			})
-		}
 	}
 
 	s.hub.Broadcast(c.gameID, WSMessage{
 		Type: "move",
 		Payload: map[string]interface{}{
-			"id":             nodeID,
+			"id":             moveResult.NodeID,
 			"player_id":      c.userID,
 			"uci":            uci,
 			"san":            san,
 			"fen":            fen,
-			"timeline_id":    resolvedTimelineID,
-			"parent_node_id": parentNode.ID,
-			"turn_number":    turnNumber,
-			"created_at":     time.Now().UTC().Format(time.RFC3339),
+			"timeline_id":    moveResult.TimelineID,
+			"parent_node_id": moveResult.ParentNodeID,
+			"turn_number":    moveResult.TurnNumber,
+			"created_at":     moveResult.CreatedAt.UTC().Format(time.RFC3339),
 		},
 	})
+
+	if moveResult.GameOver {
+		s.hub.Broadcast(c.gameID, WSMessage{
+			Type:    "game_over",
+			Payload: map[string]string{"winner_id": moveResult.WinnerID, "result": moveResult.Result},
+		})
+	}
 }
 
 func outcomeFromFEN(fen string) (string, bool) {
@@ -273,6 +276,231 @@ func (s *Server) createGameNode(ctx context.Context, gameID, userID, uci, san, p
 	}
 
 	return db.CreateNode(ctx, s.db, nodeData, resolvedParentID)
+}
+
+type moveApplyResult struct {
+	NodeID       string
+	TimelineID   string
+	ParentNodeID string
+	TurnNumber   int
+	CreatedAt    time.Time
+	GameOver     bool
+	Result       string
+	WinnerID     string
+}
+
+func (s *Server) applyMoveAtomic(ctx context.Context, gameID, userID, uci, san, promotion, fen, timelineID, parentNodeID string) (*moveApplyResult, error) {
+	tx, err := s.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("applyMoveAtomic begin: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	var gameStatus string
+	var activeTimelineID *string
+	if err := tx.QueryRow(ctx,
+		`SELECT status, active_timeline_id FROM games WHERE id = $1 FOR UPDATE`,
+		gameID,
+	).Scan(&gameStatus, &activeTimelineID); err != nil {
+		return nil, fmt.Errorf("applyMoveAtomic game lock: %w", err)
+	}
+
+	if timelineID == "" {
+		if activeTimelineID != nil && *activeTimelineID != "" {
+			timelineID = *activeTimelineID
+		} else {
+			if err := tx.QueryRow(ctx,
+				`SELECT id FROM timelines WHERE game_id = $1 ORDER BY created_at ASC LIMIT 1`,
+				gameID,
+			).Scan(&timelineID); err != nil {
+				return nil, fmt.Errorf("applyMoveAtomic timeline fallback: %w", err)
+			}
+		}
+	}
+
+	var timelineExists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM timelines WHERE id = $1 AND game_id = $2)`,
+		timelineID, gameID,
+	).Scan(&timelineExists); err != nil {
+		return nil, fmt.Errorf("applyMoveAtomic timeline check: %w", err)
+	}
+	if !timelineExists {
+		return nil, errTimelineAbsent
+	}
+
+	type parentInfo struct {
+		ID        string
+		Timeline  string
+		Turn      int
+		CreatedAt time.Time
+	}
+
+	var parent parentInfo
+	if parentNodeID != "" {
+		if err := tx.QueryRow(ctx,
+			`SELECT id, timeline_id, turn_number, created_at
+			 FROM game_nodes
+			 WHERE id = $1 AND game_id = $2
+			 FOR UPDATE`,
+			parentNodeID, gameID,
+		).Scan(&parent.ID, &parent.Timeline, &parent.Turn, &parent.CreatedAt); err != nil {
+			return nil, fmt.Errorf("applyMoveAtomic parent: %w", err)
+		}
+		if timelineID != parent.Timeline {
+			return nil, errTimelineAbsent
+		}
+	} else {
+		if err := tx.QueryRow(ctx,
+			`SELECT id, timeline_id, turn_number, created_at
+			 FROM game_nodes
+			 WHERE timeline_id = $1
+			 ORDER BY turn_number DESC
+			 LIMIT 1
+			 FOR UPDATE`,
+			timelineID,
+		).Scan(&parent.ID, &parent.Timeline, &parent.Turn, &parent.CreatedAt); err != nil {
+			return nil, fmt.Errorf("applyMoveAtomic latest parent: %w", err)
+		}
+		parentNodeID = parent.ID
+	}
+
+	var latestID string
+	if err := tx.QueryRow(ctx,
+		`SELECT id FROM game_nodes WHERE timeline_id = $1 ORDER BY turn_number DESC LIMIT 1 FOR UPDATE`,
+		timelineID,
+	).Scan(&latestID); err != nil {
+		return nil, fmt.Errorf("applyMoveAtomic latest check: %w", err)
+	}
+	if latestID != parent.ID {
+		return nil, errMoveConflict
+	}
+
+	var existingID string
+	var existingTurn int
+	var existingCreatedAt time.Time
+	err = tx.QueryRow(ctx,
+		`SELECT gn.id, gn.turn_number, gn.created_at
+		 FROM game_nodes gn
+		 INNER JOIN node_children nc ON gn.id = nc.child_node_id
+		 WHERE nc.parent_node_id = $1
+		   AND gn.move_uci = $2
+		   AND gn.timeline_id = $3
+		 LIMIT 1`,
+		parent.ID, uci, timelineID,
+	).Scan(&existingID, &existingTurn, &existingCreatedAt)
+	if err == nil {
+		if err := tx.Commit(ctx); err != nil {
+			return nil, fmt.Errorf("applyMoveAtomic commit existing: %w", err)
+		}
+		return &moveApplyResult{
+			NodeID:       existingID,
+			TimelineID:   timelineID,
+			ParentNodeID: parent.ID,
+			TurnNumber:   existingTurn,
+			CreatedAt:    existingCreatedAt,
+		}, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("applyMoveAtomic idempotent check: %w", err)
+	}
+
+	if gameStatus != string(models.GameStatusActive) {
+		return nil, errMoveNotActive
+	}
+
+	var isCheck, isCheckmate, isStalemate bool
+	if fenOpt, fenErr := chess.FEN(fen); fenErr == nil {
+		game := chess.NewGame(fenOpt)
+		pos := game.Position()
+		status := pos.Status()
+
+		isCheckmate = status == chess.Checkmate
+		isStalemate = status == chess.Stalemate
+
+		if isCheckmate {
+			isCheck = true
+		} else if !isStalemate && status == chess.NoMethod {
+			isCheck = len(game.ValidMoves()) == 0
+		}
+	}
+
+	turnNumber := parent.Turn + 1
+	var nodeCount int
+	if err := tx.QueryRow(ctx,
+		`SELECT COUNT(*) FROM game_nodes WHERE timeline_id = $1`,
+		timelineID,
+	).Scan(&nodeCount); err != nil {
+		return nil, fmt.Errorf("applyMoveAtomic count: %w", err)
+	}
+
+	timelineSize := nodeCount + 1
+	shouldSnapshot := db.ShouldSnapshotDynamic(turnNumber, timelineSize, parent.CreatedAt, time.Now())
+	var snapshotFEN *string
+	if shouldSnapshot {
+		snapshotFEN = &fen
+	}
+
+	var nodeID string
+	var createdAt time.Time
+	if err := tx.QueryRow(ctx,
+		`INSERT INTO game_nodes
+		 (game_id, timeline_id, parent_node_id, move_uci, move_san, move_promotion,
+		  board_state, is_snapshot, turn_number, created_by_user, is_check, is_checkmate, is_stalemate, captured_piece)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		 RETURNING id, created_at`,
+		gameID, timelineID, parent.ID,
+		uci, san, promotion,
+		snapshotFEN, shouldSnapshot, turnNumber, userID,
+		isCheck, isCheckmate, isStalemate, nil,
+	).Scan(&nodeID, &createdAt); err != nil {
+		return nil, fmt.Errorf("applyMoveAtomic insert node: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO node_children (parent_node_id, child_node_id) VALUES ($1, $2)`,
+		parent.ID, nodeID,
+	); err != nil {
+		return nil, fmt.Errorf("applyMoveAtomic link node: %w", err)
+	}
+
+	result, shouldEnd := outcomeFromFEN(fen)
+	winnerID := ""
+	gameOver := false
+	if shouldEnd {
+		var winnerArg interface{}
+		if result == "checkmate" {
+			winnerID = userID
+			winnerArg = userID
+		}
+		ct, err := tx.Exec(ctx,
+			`UPDATE games
+			 SET status = 'completed', winner_id = $1, result = $2, updated_at = NOW()
+			 WHERE id = $3 AND status = 'active'`,
+			winnerArg, result, gameID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("applyMoveAtomic finalize: %w", err)
+		}
+		gameOver = ct.RowsAffected() > 0
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("applyMoveAtomic commit: %w", err)
+	}
+
+	return &moveApplyResult{
+		NodeID:       nodeID,
+		TimelineID:   timelineID,
+		ParentNodeID: parent.ID,
+		TurnNumber:   turnNumber,
+		CreatedAt:    createdAt,
+		GameOver:     gameOver,
+		Result:       result,
+		WinnerID:     winnerID,
+	}, nil
 }
 
 func (s *Server) resolveTimelineParent(ctx context.Context, gameID, timelineID, parentNodeID string) (*models.GameNode, string, error) {

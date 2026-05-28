@@ -158,46 +158,34 @@ func (b *BotEngine) playMove(ctx context.Context, game *chess.Game) {
 	uci := moveToUCI(chosen)
 	san := (chess.AlgebraicNotation{}).Encode(pos, chosen)
 
-	nodeID, err := b.server.createGameNode(ctx, b.gameID, b.botUserID, uci, san, "", fen, "", "")
+	moveResult, err := b.server.applyMoveAtomic(ctx, b.gameID, b.botUserID, uci, san, "", fen, "", "")
 	if err != nil {
-		log.Printf("bot: failed to create timeline node: %v", err)
+		log.Printf("bot: failed to apply move: %v", err)
 		return
-	}
-
-	node, err := db.GetNode(ctx, b.server.db, nodeID)
-	if err != nil {
-		log.Printf("bot: failed to load node for broadcast: %v", err)
-		return
-	}
-
-	parentNodeID := ""
-	if node.ParentNodeID != nil {
-		parentNodeID = *node.ParentNodeID
 	}
 
 	b.server.hub.Broadcast(b.gameID, WSMessage{
 		Type: "move",
 		Payload: map[string]interface{}{
-			"id":             nodeID,
+			"id":             moveResult.NodeID,
 			"player_id":      b.botUserID,
 			"uci":            uci,
 			"san":            san,
 			"fen":            fen,
-			"timeline_id":    node.TimelineID,
-			"parent_node_id": parentNodeID,
-			"turn_number":    node.TurnNumber,
-			"created_at":     node.CreatedAt.UTC().Format(time.RFC3339),
+			"timeline_id":    moveResult.TimelineID,
+			"parent_node_id": moveResult.ParentNodeID,
+			"turn_number":    moveResult.TurnNumber,
+			"created_at":     moveResult.CreatedAt.UTC().Format(time.RFC3339),
 		},
 	})
 
 	b.maybeUseEnergyToLock(ctx, game)
 
-	outcome := game.Outcome()
-	if outcome != chess.NoOutcome {
-		method := game.Method()
-		result := outcomeToResult(outcome, method)
-		winnerID := b.outcomeWinner(outcome)
-		b.endGame(ctx, winnerID, result)
+	if moveResult.GameOver {
+		b.server.hub.Broadcast(b.gameID, WSMessage{
+			Type:    "game_over",
+			Payload: map[string]string{"winner_id": moveResult.WinnerID, "result": moveResult.Result},
+		})
 	}
 }
 
