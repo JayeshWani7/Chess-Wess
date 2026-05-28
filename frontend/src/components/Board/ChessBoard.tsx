@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import type { Piece } from "chess.js";
 import { useGameStore } from "../../store/gameStore";
 import { wsClient } from "../../utils/wsClient";
 import { useAuthStore } from "../../store/authStore";
@@ -43,6 +44,7 @@ export default function ChessBoard() {
   const userId = useAuthStore((s) => s.userId);
 
   const [pendingPromo, setPendingPromo] = useState<PendingPromotion | null>(null);
+  const [dragFrom, setDragFrom] = useState<string | null>(null);
 
   const flipped = gameInfo && userId
     ? gameInfo.black_player_id === userId
@@ -74,6 +76,25 @@ export default function ChessBoard() {
     [chess, applyMove, selectSquare, activeTimelineId, activeTimelineLatestNodeId]
   );
 
+  const tryMove = useCallback(
+    (from: string, to: string) => {
+      const piece = chess.get(from as Parameters<typeof chess.get>[0]);
+      if (!piece) return;
+
+      const isPromotion =
+        piece.type === "p" &&
+        ((playerColor === "w" && to[1] === "8") || (playerColor === "b" && to[1] === "1"));
+
+      if (isPromotion) {
+        setPendingPromo({ from, to });
+        return;
+      }
+
+      commitMove(from, to);
+    },
+    [chess, playerColor, commitMove]
+  );
+
   const handleSquareClick = useCallback(
     (square: string) => {
       if (status !== "active") return;
@@ -81,25 +102,51 @@ export default function ChessBoard() {
       if (pendingPromo) return;
 
       if (selectedSquare && legalMoves.includes(square)) {
-        const piece = chess.get(selectedSquare as Parameters<typeof chess.get>[0]);
-
-        const isPromotion =
-          piece?.type === "p" &&
-          ((playerColor === "w" && square[1] === "8") ||
-            (playerColor === "b" && square[1] === "1"));
-
-        if (isPromotion) {
-          setPendingPromo({ from: selectedSquare, to: square });
-          return;
-        }
-
-        commitMove(selectedSquare, square);
+        tryMove(selectedSquare, square);
         return;
       }
 
       selectSquare(square);
     },
-    [chess, selectedSquare, legalMoves, playerColor, status, pendingPromo, commitMove, selectSquare]
+    [chess, selectedSquare, legalMoves, playerColor, status, pendingPromo, tryMove, selectSquare]
+  );
+
+  const canInteract = status === "active" && chess.turn() === playerColor && !pendingPromo;
+
+  const handleDragStart = useCallback(
+    (square: string, piece: Piece, event: React.DragEvent<HTMLDivElement>) => {
+      if (!canInteract) return;
+      if (piece.color !== playerColor) return;
+      event.dataTransfer.setData("text/plain", square);
+      event.dataTransfer.effectAllowed = "move";
+      setDragFrom(square);
+      selectSquare(square);
+    },
+    [playerColor, canInteract, selectSquare]
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setDragFrom(null);
+  }, []);
+
+  const handleDrop = useCallback(
+    (square: string, event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (!canInteract) return;
+
+      const from = dragFrom || event.dataTransfer.getData("text/plain");
+      if (!from || from === square) return;
+
+      if (!legalMoves.includes(square)) {
+        setDragFrom(null);
+        selectSquare(null);
+        return;
+      }
+
+      tryMove(from, square);
+      setDragFrom(null);
+    },
+    [canInteract, dragFrom, legalMoves, tryMove, selectSquare]
   );
 
   function handlePromoChoice(piece: "q" | "r" | "b" | "n") {
@@ -145,6 +192,10 @@ export default function ChessBoard() {
                 isLegal={isLegal}
                 isLastMove={isLastMove}
                 onClick={handleSquareClick}
+                canDragPiece={Boolean(piece) && canInteract && piece?.color === playerColor}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDrop={handleDrop}
               />
             );
           })
