@@ -39,10 +39,21 @@ export default function GameReviewPage({ game, onBack }: Props) {
     if (!token) return;
     if (resolvedGame) return;
     if (!gameId) return;
-    api.listMyGames(token)
-      .then((list) => {
-        const found = (list ?? []).find((entry) => entry.id === gameId) ?? null;
-        setResolvedGame(found);
+    api.getGame(token, gameId)
+      .then(async (gameInfo) => {
+        const [whiteUser, blackUser] = await Promise.all([
+          gameInfo.white_player_id
+            ? api.getUser(token, gameInfo.white_player_id).catch(() => null)
+            : Promise.resolve(null),
+          gameInfo.black_player_id
+            ? api.getUser(token, gameInfo.black_player_id).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        setResolvedGame({
+          ...gameInfo,
+          white_username: whiteUser?.username ?? "White",
+          black_username: blackUser?.username ?? "Black",
+        } as GameHistoryEntry);
       })
       .catch(() => setResolvedGame(null));
   }, [token, resolvedGame, gameId]);
@@ -66,13 +77,41 @@ export default function GameReviewPage({ game, onBack }: Props) {
           fen_after: n.board_state,
         }));
 
-      setMoves(reviewMoves);
-      setCursor(reviewMoves.length - 1);
-      setLoading(false);
+      if (reviewMoves.length > 0) {
+        setMoves(reviewMoves);
+        setCursor(reviewMoves.length - 1);
+        setLoading(false);
+      } else {
+        // Fallback: game was played in standard mode without timeline nodes
+        return api.getGameMoves(token, resolvedGame.id).then((rawMoves) => {
+          const fallback = rawMoves.map((m) => ({
+            id: m.id,
+            move_number: m.move_number,
+            move_san: m.move_san,
+            move_uci: m.move_uci,
+            fen_after: m.fen_after,
+          }));
+          setMoves(fallback);
+          setCursor(fallback.length - 1);
+          setLoading(false);
+        });
+      }
     }).catch(() => {
-      setMoves([]);
-      setCursor(-1);
-      setLoading(false);
+      // Timeline endpoint failed — fall back to game_moves table
+      api.getGameMoves(token, resolvedGame.id).then((rawMoves) => {
+        const fallback = rawMoves.map((m) => ({
+          id: m.id,
+          move_number: m.move_number,
+          move_san: m.move_san,
+          move_uci: m.move_uci,
+          fen_after: m.fen_after,
+        }));
+        setMoves(fallback);
+        setCursor(fallback.length - 1);
+      }).catch(() => {
+        setMoves([]);
+        setCursor(-1);
+      }).finally(() => setLoading(false));
     });
   }, [token, resolvedGame]);
 
