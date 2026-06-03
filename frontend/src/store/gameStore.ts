@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { Chess } from "chess.js";
 import type { Move } from "chess.js";
+import {
+  LRUTracker,
+  applyEviction,
+  buildSummaries,
+  MAX_HOT_TIMELINES,
+  type TimelineSummary,
+} from "./timelineMemory";
 
 export type GameStatus = "pending" | "active" | "completed" | "abandoned";
 export type GameResult = "checkmate" | "stalemate" | "timeout" | "resign" | "draw" | null;
@@ -107,6 +114,9 @@ interface GameState {
   activeTimelineLatestNodeId: string | null;
   selectedTimelineNodeId: string | null;
 
+  /** Lightweight summaries for ALL timelines — always in memory. */
+  timelineSummaries: TimelineSummary[];
+
   playerEnergy: PlayerEnergy | null;
   opponentEnergy: PlayerEnergy | null;
   timelineMetadata: Record<string, TimelineMetadata>;
@@ -121,6 +131,8 @@ interface GameState {
   setActiveTimelineId: (timelineId: string | null) => void;
   selectTimelineNode: (nodeId: string | null) => void;
   syncActiveTimelineBoard: () => void;
+  /** Notify the LRU that a timeline was accessed (loads full nodes if cold). */
+  touchTimeline: (timelineId: string) => void;
   selectSquare: (square: string | null) => void;
   setTimers: (white: number, black: number) => void;
   setGameOver: (result: GameResult, winnerId: string | null) => void;
@@ -133,6 +145,9 @@ interface GameState {
   consumeEnergy: (amount: number) => void;
   refundEnergy: (amount: number) => void;
 }
+
+// Module-level LRU tracker — one per browser session, reset on leaveGame.
+const lru = new LRUTracker(MAX_HOT_TIMELINES);
 
 function buildMovesFromTimeline(nodes: TimelineNode[]): GameMove[] {
   const moves: GameMove[] = [];
@@ -171,11 +186,13 @@ export const useGameStore = create<GameState>()((set, get) => ({
   activeTimelineId: null,
   activeTimelineLatestNodeId: null,
   selectedTimelineNodeId: null,
+  timelineSummaries: [],
   playerEnergy: null,
   opponentEnergy: null,
   timelineMetadata: {},
 
   setActiveGame: (gameId, info, color) => {
+    lru.reset();
     const chess = new Chess();
     set({
       activeGameId: gameId,
@@ -196,6 +213,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       activeTimelineId: info.active_timeline_id ?? null,
       activeTimelineLatestNodeId: null,
       selectedTimelineNodeId: null,
+      timelineSummaries: [],
       playerEnergy: null,
       opponentEnergy: null,
       timelineMetadata: {},
@@ -233,10 +251,16 @@ export const useGameStore = create<GameState>()((set, get) => ({
   },
 
   setTimelineData: (timelines, activeTimelineId) => {
+    // Always mark active timeline as hot
+    if (activeTimelineId) lru.pin(activeTimelineId);
+    const hotSet = lru.hotSet();
+    const pinnedIds = new Set(activeTimelineId ? [activeTimelineId] : []);
+    const evicted = applyEviction(timelines, hotSet, pinnedIds);
+
     const nodesById: Record<string, TimelineNode> = {};
     const nodesByTimeline: Record<string, TimelineNode[]> = {};
 
-    for (const timeline of timelines) {
+    for (const timeline of evicted) {
       const sorted = [...timeline.nodes].sort((a, b) => a.turn_number - b.turn_number);
       nodesByTimeline[timeline.timeline_id] = sorted;
       for (const node of sorted) {
@@ -245,8 +269,8 @@ export const useGameStore = create<GameState>()((set, get) => ({
     }
 
     let resolvedActiveTimelineId = activeTimelineId ?? null;
-    if (!resolvedActiveTimelineId && timelines.length > 0) {
-      resolvedActiveTimelineId = timelines[0].timeline_id;
+    if (!resolvedActiveTimelineId && evicted.length > 0) {
+      resolvedActiveTimelineId = evicted[0].timeline_id;
     }
 
     let latestNodeId: string | null = null;
@@ -264,11 +288,12 @@ export const useGameStore = create<GameState>()((set, get) => ({
       : null;
 
     set({
-      timelines,
+      timelines: evicted,
       nodesById,
       nodesByTimeline,
       activeTimelineId: resolvedActiveTimelineId,
       activeTimelineLatestNodeId: latestNodeId,
+      timelineSummaries: buildSummaries(timelines), // summaries always from full data
       moves,
       chess: latestFen ? new Chess(latestFen) : get().chess,
     });
@@ -310,6 +335,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
         nodesById,
         nodesByTimeline,
         timelines,
+        timelineSummaries: buildSummaries(timelines),
       };
 
       if (state.activeTimelineId === node.timeline_id) {
@@ -342,7 +368,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
         },
       ];
 
-      return { nodesById, nodesByTimeline, timelines };
+      return { nodesById, nodesByTimeline, timelines, timelineSummaries: buildSummaries(timelines) };
     });
   },
 
@@ -363,6 +389,25 @@ export const useGameStore = create<GameState>()((set, get) => ({
       return;
     }
 
+    // Mark hot in LRU — evict a cold timeline if over budget
+    const evicted = lru.touch(timelineId);
+    if (evicted) {
+      // Demote evicted timeline to stub in the store
+      set((state) => ({
+        timelines: state.timelines.map((t) =>
+          t.timeline_id === evicted
+            ? { ...t, nodes: t.nodes.slice(-1), nodes_partial: true }
+            : t
+        ),
+        nodesByTimeline: (() => {
+          const updated = { ...state.nodesByTimeline };
+          const stub = updated[evicted]?.slice(-1) ?? [];
+          updated[evicted] = stub;
+          return updated;
+        })(),
+      }));
+    }
+
     const list = nodesByTimeline[timelineId] ?? [];
     const latestNode = list.length ? list[list.length - 1] : null;
     const moves = buildMovesFromTimeline(list);
@@ -376,6 +421,24 @@ export const useGameStore = create<GameState>()((set, get) => ({
   },
 
   selectTimelineNode: (nodeId) => set({ selectedTimelineNodeId: nodeId }),
+
+  touchTimeline: (timelineId) => {
+    // Record access in LRU; if the returned evicted id is set, demote that timeline
+    const evicted = lru.touch(timelineId);
+    if (evicted) {
+      set((state) => {
+        const stub = (state.nodesByTimeline[evicted] ?? []).slice(-1);
+        return {
+          timelines: state.timelines.map((t) =>
+            t.timeline_id === evicted
+              ? { ...t, nodes: stub, nodes_partial: true }
+              : t
+          ),
+          nodesByTimeline: { ...state.nodesByTimeline, [evicted]: stub },
+        };
+      });
+    }
+  },
 
   syncActiveTimelineBoard: () => {
     const { activeTimelineId, nodesByTimeline } = get();
@@ -429,7 +492,8 @@ export const useGameStore = create<GameState>()((set, get) => ({
 
   setPlayerColor: (color) => set({ playerColor: color }),
 
-  leaveGame: () =>
+  leaveGame: () => {
+    lru.reset();
     set({
       activeGameId: null,
       gameInfo: null,
@@ -447,10 +511,12 @@ export const useGameStore = create<GameState>()((set, get) => ({
       activeTimelineId: null,
       activeTimelineLatestNodeId: null,
       selectedTimelineNodeId: null,
+      timelineSummaries: [],
       playerEnergy: null,
       opponentEnergy: null,
       timelineMetadata: {},
-    }),
+    });
+  },
 
   setPlayerEnergy: (energy) => set({ playerEnergy: energy }),
 

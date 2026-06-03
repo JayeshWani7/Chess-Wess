@@ -10,6 +10,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import type { TimelineData, TimelineNode } from "../../store/gameStore";
+import { applyRenderBudget, MAX_RENDER_NODES } from "../../store/timelineMemory";
 
 interface TimelineGraphProps {
   timelines: TimelineData[];
@@ -24,6 +25,7 @@ const NODE_WIDTH = 132;
 const NODE_HEIGHT = 48;
 const EVAL_CLAMP = 6;
 
+// Shared dagre graph instance — re-used across renders (reset each layout call)
 const dagreGraph = new dagre.graphlib.Graph();
 dagreGraph.setDefaultEdgeLabel(() => ({}));
 
@@ -36,6 +38,10 @@ function evaluationColor(score?: number | null) {
 }
 
 function layoutDag(nodes: Node[], edges: Edge[]) {
+  // Clear previous layout data
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dagreGraph.nodes().forEach((n: any) => dagreGraph.removeNode(n));
+
   dagreGraph.setGraph({
     rankdir: "LR",
     ranksep: NODE_X_STEP,
@@ -47,7 +53,10 @@ function layoutDag(nodes: Node[], edges: Edge[]) {
   });
 
   edges.forEach((edge) => {
-    dagreGraph.setEdge(edge.source, edge.target);
+    // Guard: dagre requires both endpoints to exist
+    if (dagreGraph.hasNode(edge.source) && dagreGraph.hasNode(edge.target)) {
+      dagreGraph.setEdge(edge.source, edge.target);
+    }
   });
 
   dagre.layout(dagreGraph);
@@ -109,15 +118,23 @@ export default function TimelineGraph({
   const handleNodeClick: NodeMouseHandler = (_, node) => onSelectNode(node.id);
 
   const { nodes, edges } = useMemo(() => {
+    // ── Apply render budget before building React Flow nodes ──────────────
+    const budgeted = applyRenderBudget({
+      timelines,
+      activeTimelineId,
+      selectedNodeId,
+      maxNodes: MAX_RENDER_NODES,
+    });
+
     const rfNodes: Node[] = [];
     const rfEdges: Edge[] = [];
     const timelineIndex = new Map<string, number>();
     const nodeIds = new Set<string>();
 
-    timelines.forEach((t, idx) => timelineIndex.set(t.timeline_id, idx));
+    budgeted.forEach((t, idx) => timelineIndex.set(t.timeline_id, idx));
 
     const allNodes: TimelineNode[] = [];
-    for (const timeline of timelines) {
+    for (const timeline of budgeted) {
       for (const node of timeline.nodes) {
         allNodes.push(node);
         nodeIds.add(node.id);
@@ -155,7 +172,7 @@ export default function TimelineGraph({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          textAlign: "center",
+          textAlign: "center" as const,
         },
       });
 
@@ -173,8 +190,19 @@ export default function TimelineGraph({
     return layoutDag(rfNodes, [...rfEdges, ...buildBranchEdges(allNodes, nodeIds)]);
   }, [timelines, activeTimelineId, selectedNodeId]);
 
+  // Node count badge for transparency when budget is applied
+  const totalNodes = timelines.reduce((s, t) => s + t.nodes.length, 0);
+  const renderingAll = nodes.length >= totalNodes;
+
   return (
-    <div className="h-[360px] w-full rounded-xl border border-line bg-panel">
+    <div className="relative h-[360px] w-full rounded-xl border border-line bg-panel">
+      {/* Render budget indicator */}
+      {!renderingAll && (
+        <div className="absolute top-2 left-2 z-10 text-xs bg-black/50 text-amber-300 px-2 py-1 rounded pointer-events-none">
+          Showing {nodes.length} / {totalNodes} nodes
+        </div>
+      )}
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
