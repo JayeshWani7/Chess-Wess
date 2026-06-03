@@ -50,6 +50,13 @@ export interface GameHistoryEntry extends GameInfo {
   black_username: string;
 }
 
+export interface GameHistoryPage {
+  games: GameHistoryEntry[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export interface GameMove {
   id: string;
   game_id: string;
@@ -200,8 +207,17 @@ export const api = {
   getUser: (token: string, userId: string) =>
     request<UserInfo>(`/api/users/${userId}`, {}, token),
 
-  listMyGames: (token: string) =>
-    request<GameHistoryEntry[]>("/api/games/history", {}, token),
+  listMyGames: (
+    token: string,
+    page = 1,
+    limit = 10,
+    filter: "all" | "win" | "loss" | "draw" = "all"
+  ) =>
+    request<GameHistoryPage>(
+      `/api/games/history?page=${page}&limit=${limit}&filter=${filter}`,
+      {},
+      token
+    ),
   getPlayerEnergy: (token: string, gameId: string) =>
     request<any>(`/api/games/${gameId}/energy`, {}, token),
 

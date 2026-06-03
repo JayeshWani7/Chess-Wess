@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/ChessWess/backend/db"
 	"github.com/ChessWess/backend/models"
@@ -350,28 +353,63 @@ func (s *Server) listMyGames(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := r.Context().Value(userIDKey).(string)
 
-	rows, err := s.db.Query(r.Context(),
-		`SELECT
-		   g.id,
-		   g.white_player_id,
-		   g.black_player_id,
-		   g.status,
-		   g.time_control,
-		   g.winner_id,
-		   g.result,
-		   g.created_at,
-		   g.updated_at,
-		   wu.username  AS white_username,
-		   bu.username  AS black_username
-		 FROM games g
-		 LEFT JOIN users wu ON wu.id = g.white_player_id
-		 LEFT JOIN users bu ON bu.id = g.black_player_id
-		 WHERE (g.white_player_id = $1 OR g.black_player_id = $1)
-		   AND g.status IN ('completed', 'abandoned')
-		 ORDER BY g.updated_at DESC
-		 LIMIT 50`,
-		userID,
+	// Parse pagination query params: ?page=1&limit=10&filter=all|win|loss|draw
+	page := 1
+	limit := 10
+	filterParam := r.URL.Query().Get("filter") // "all","win","loss","draw"
+
+	if p := r.URL.Query().Get("page"); p != "" {
+		if v, err := strconv.Atoi(p); err == nil && v > 0 {
+			page = v
+		}
+	}
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 100 {
+			limit = v
+		}
+	}
+	offset := (page - 1) * limit
+
+	// Build outcome filter clause
+	var filterClause string
+	switch filterParam {
+	case "win":
+		filterClause = fmt.Sprintf(" AND g.winner_id = '%s'", userID)
+	case "loss":
+		filterClause = fmt.Sprintf(" AND g.winner_id IS NOT NULL AND g.winner_id != '%s'", userID)
+	case "draw":
+		filterClause = " AND g.result IN ('stalemate','draw')"
+	}
+
+	baseWhere := fmt.Sprintf(
+		`(g.white_player_id = $1 OR g.black_player_id = $1) AND g.status IN ('completed','abandoned')%s`,
+		filterClause,
 	)
+
+	// Count total matching rows
+	var total int
+	countSQL := fmt.Sprintf(`SELECT COUNT(*) FROM games g WHERE %s`, baseWhere)
+	if err := s.db.QueryRow(r.Context(), countSQL, userID).Scan(&total); err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch page
+	querySQL := fmt.Sprintf(`
+		SELECT
+		  g.id, g.white_player_id, g.black_player_id,
+		  g.status, g.time_control, g.winner_id, g.result,
+		  g.created_at, g.updated_at,
+		  COALESCE(wu.username,'') AS white_username,
+		  COALESCE(bu.username,'') AS black_username
+		FROM games g
+		LEFT JOIN users wu ON wu.id = g.white_player_id
+		LEFT JOIN users bu ON bu.id = g.black_player_id
+		WHERE %s
+		ORDER BY g.updated_at DESC
+		LIMIT $2 OFFSET $3`, baseWhere)
+
+	rows, err := s.db.Query(r.Context(), querySQL, userID, limit, offset)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
@@ -379,9 +417,17 @@ func (s *Server) listMyGames(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type gameHistoryRow struct {
-		models.Game
-		WhiteUsername string `json:"white_username"`
-		BlackUsername string `json:"black_username"`
+		ID            string     `json:"id"`
+		WhitePlayerID *string    `json:"white_player_id"`
+		BlackPlayerID *string    `json:"black_player_id"`
+		Status        string     `json:"status"`
+		TimeControl   int        `json:"time_control"`
+		WinnerID      *string    `json:"winner_id,omitempty"`
+		Result        *string    `json:"result,omitempty"`
+		CreatedAt     time.Time  `json:"created_at"`
+		UpdatedAt     time.Time  `json:"updated_at"`
+		WhiteUsername string     `json:"white_username"`
+		BlackUsername string     `json:"black_username"`
 	}
 
 	games := []gameHistoryRow{}
@@ -394,11 +440,20 @@ func (s *Server) listMyGames(w http.ResponseWriter, r *http.Request) {
 			&row.CreatedAt, &row.UpdatedAt,
 			&row.WhiteUsername, &row.BlackUsername,
 		); err != nil {
+			log.Printf("listMyGames scan error: %v", err)
 			continue
 		}
 		games = append(games, row)
 	}
+	if err := rows.Err(); err != nil {
+		log.Printf("listMyGames rows error: %v", err)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(games)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"games": games,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
