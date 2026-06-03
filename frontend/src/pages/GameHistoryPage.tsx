@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { api, type GameHistoryEntry } from "../utils/api";
 import { useAuthStore } from "../store/authStore";
@@ -10,6 +10,32 @@ export default function GameHistoryPage() {
   const [history, setHistory] = useState<GameHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("all");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleShare = useCallback(async (gameId: string) => {
+    const url = `${window.location.origin}/review/${gameId}`;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        // Fallback for browsers/contexts without clipboard API
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopiedId(gameId);
+      setTimeout(() => setCopiedId((prev) => (prev === gameId ? null : prev)), 2000);
+    } catch {
+      // If clipboard fails entirely, open the URL so the user can copy manually
+      window.open(url, "_blank", "noopener");
+    }
+  }, []);
 
   useEffect(() => {
     if (!token) return;
@@ -104,7 +130,15 @@ export default function GameHistoryPage() {
                     <Link to={`/review/${game.id}`} className="btn-outline text-xs">
                       Review
                     </Link>
-                    <button className="btn-ghost text-xs">Share</button>
+                    <button
+                      className={`btn-ghost text-xs transition-colors ${
+                        copiedId === game.id ? "text-leaf border-leaf/40" : ""
+                      }`}
+                      onClick={() => handleShare(game.id)}
+                      title="Copy review link to clipboard"
+                    >
+                      {copiedId === game.id ? "✓ Copied!" : "Share"}
+                    </button>
                   </div>
                 </div>
               );
