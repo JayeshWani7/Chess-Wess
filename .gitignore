@@ -5,6 +5,7 @@
 *.swo
 *~
 .DS_Store
+.kiro
 
 # Environment
 .env
