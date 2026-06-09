@@ -29,6 +29,7 @@ func (s *Server) listGames(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(r.Context(),
 		`SELECT id, white_player_id, black_player_id, status, time_control, active_timeline_id, created_at, updated_at
 		 FROM games WHERE status = 'pending' ORDER BY created_at DESC LIMIT 50`)
+	defer s.obs.TrackDBQuery("query", "games", time.Now(), &err)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
@@ -83,6 +84,7 @@ func (s *Server) createGame(w http.ResponseWriter, r *http.Request) {
 		 RETURNING id, white_player_id, black_player_id, status, time_control, created_at, updated_at`,
 		whiteID, blackID, req.TimeControl,
 	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.CreatedAt, &g.UpdatedAt)
+	defer s.obs.TrackDBQuery("query", "games", time.Now(), &err)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
@@ -132,6 +134,7 @@ func (s *Server) getGameMoves(w http.ResponseWriter, r *http.Request, gameID str
 	rows, err := s.db.Query(r.Context(),
 		`SELECT id, game_id, player_id, move_number, move_san, move_uci, fen_after, created_at
 		 FROM game_moves WHERE game_id = $1 ORDER BY move_number ASC`, gameID)
+	defer s.obs.TrackDBQuery("query", "game_moves", time.Now(), &err)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
