@@ -11,6 +11,7 @@ import (
 
 	"github.com/ChessWess/backend/db"
 	"github.com/ChessWess/backend/models"
+	"github.com/ChessWess/backend/observability"
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5"
 	"github.com/notnil/chess"
@@ -72,6 +73,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readPump(c *Client) {
+	c.disconnectReason = "normal"
 	defer func() {
 		s.hub.leave <- c
 		s.hub.Broadcast(c.gameID, WSMessage{
@@ -83,6 +85,7 @@ func (s *Server) readPump(c *Client) {
 	for {
 		_, raw, err := c.conn.ReadMessage()
 		if err != nil {
+			c.disconnectReason = "error"
 			break
 		}
 
@@ -109,6 +112,8 @@ func (s *Server) readPump(c *Client) {
 }
 
 func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
+	start := time.Now()
+
 	payload, ok := msg.Payload.(map[string]interface{})
 	if !ok {
 		return
@@ -119,6 +124,8 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 	parentNodeID, _ := payload["parent_node_id"].(string)
 
 	if uci == "" {
+		s.obs.RecordMoveValidationError("missing_uci")
+		s.obs.RecordMove(c.gameID, "", "error", time.Since(start))
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "move requires uci"})
 		return
 	}
@@ -127,7 +134,17 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 
 	parentNode, resolvedTimelineID, err := s.resolveTimelineParent(ctx, c.gameID, timelineID, parentNodeID)
 	if err != nil {
-		log.Printf("ws: failed to resolve timeline parent: %v", err)
+		latencyMs := time.Since(start).Seconds() * 1000
+		s.obs.RecordMoveValidationError("invalid_timeline_context")
+		s.obs.RecordMove(c.gameID, "", "error", time.Since(start))
+		s.log.Warn("move_timeline_error",
+			"game_id", c.gameID,
+			"timeline_id", timelineID,
+			"user_id", c.userID,
+			"uci", uci,
+			"reason", err.Error(),
+			"latency_ms", latencyMs,
+		)
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "invalid timeline context"})
 		return
 	}
@@ -150,6 +167,17 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 		}
 	}
 	if selected == nil {
+		latencyMs := time.Since(start).Seconds() * 1000
+		s.obs.RecordMoveValidationError("illegal_move")
+		s.obs.RecordMove(c.gameID, resolvedTimelineID, "illegal", time.Since(start))
+		s.log.Warn("move_failed",
+			append(observability.GameFields(c.gameID, resolvedTimelineID, parentNode.ID, parentNode.TurnNumber),
+				"user_id", c.userID,
+				"uci", uci,
+				"reason", "illegal_move",
+				"latency_ms", latencyMs,
+			)...,
+		)
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "illegal move"})
 		return
 	}
@@ -169,22 +197,45 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 
 	moveResult, err := s.applyMoveAtomic(ctx, c.gameID, c.userID, uci, san, promotion, fen, resolvedTimelineID, parentNode.ID)
 	if err != nil {
+		var outcome, reason string
 		if errors.Is(err, errMoveConflict) {
-			c.send <- mustMarshal(WSMessage{Type: "error", Payload: "move_conflict"})
-			return
+			outcome = "conflict"
+			reason = "conflict"
+		} else if errors.Is(err, errMoveNotActive) {
+			outcome = "error"
+			reason = "game_not_active"
+		} else if errors.Is(err, errTimelineAbsent) {
+			outcome = "error"
+			reason = "invalid_timeline"
+		} else {
+			outcome = "error"
+			reason = "error"
+			log.Printf("ws: failed to apply move: %v", err)
+			s.log.Error("move_apply_error",
+				"game_id", c.gameID,
+				"timeline_id", resolvedTimelineID,
+				"user_id", c.userID,
+				"uci", uci,
+				"reason", err.Error(),
+				"latency_ms", time.Since(start).Seconds()*1000,
+			)
 		}
-		if errors.Is(err, errMoveNotActive) {
-			c.send <- mustMarshal(WSMessage{Type: "error", Payload: "game_not_active"})
-			return
-		}
-		if errors.Is(err, errTimelineAbsent) {
-			c.send <- mustMarshal(WSMessage{Type: "error", Payload: "invalid_timeline"})
-			return
-		}
-		log.Printf("ws: failed to apply move: %v", err)
-		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "failed to save timeline move"})
+		s.obs.RecordMoveValidationError(reason)
+		s.obs.RecordMove(c.gameID, resolvedTimelineID, outcome, time.Since(start))
+		c.send <- mustMarshal(WSMessage{Type: "error", Payload: reason})
 		return
 	}
+
+	latencyMs := time.Since(start).Seconds() * 1000
+	s.obs.RecordMove(c.gameID, moveResult.TimelineID, "success", time.Since(start))
+	s.log.Info("move_applied",
+		append(observability.GameFields(c.gameID, moveResult.TimelineID, moveResult.NodeID, moveResult.TurnNumber),
+			"user_id", c.userID,
+			"uci", uci,
+			"san", san,
+			"latency_ms", latencyMs,
+		)...,
+	)
 
 	s.hub.Broadcast(c.gameID, WSMessage{
 		Type: "move",

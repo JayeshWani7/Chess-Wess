@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"sync"
+
+	"github.com/ChessWess/backend/observability"
 )
 
 type WSMessage struct {
@@ -12,11 +14,12 @@ type WSMessage struct {
 }
 
 type Client struct {
-	hub    *Hub
-	gameID string
-	userID string
-	send   chan []byte
-	conn   wsConn
+	hub              *Hub
+	gameID           string
+	userID           string
+	send             chan []byte
+	conn             wsConn
+	disconnectReason string
 }
 
 type wsConn interface {
@@ -31,6 +34,7 @@ type Hub struct {
 	join    chan *Client
 	leave   chan *Client
 	message chan roomMessage
+	obs     *observability.Registry
 }
 
 type roomMessage struct {
@@ -38,12 +42,13 @@ type roomMessage struct {
 	data   []byte
 }
 
-func NewHub() *Hub {
+func NewHub(obs *observability.Registry) *Hub {
 	return &Hub{
 		rooms:   make(map[string]map[*Client]struct{}),
 		join:    make(chan *Client, 64),
 		leave:   make(chan *Client, 64),
 		message: make(chan roomMessage, 256),
+		obs:     obs,
 	}
 }
 
@@ -57,6 +62,9 @@ func (h *Hub) Run() {
 			}
 			h.rooms[c.gameID][c] = struct{}{}
 			h.mu.Unlock()
+			if h.obs != nil {
+				h.obs.RecordWSConnect()
+			}
 
 		case c := <-h.leave:
 			h.mu.Lock()
@@ -67,6 +75,9 @@ func (h *Hub) Run() {
 				}
 			}
 			h.mu.Unlock()
+			if h.obs != nil {
+				h.obs.RecordWSDisconnect(c.disconnectReason)
+			}
 			close(c.send)
 
 		case msg := <-h.message:
@@ -83,6 +94,18 @@ func (h *Hub) Run() {
 	}
 }
 
+// ActiveConnections returns the total number of clients connected across all game rooms.
+// It is safe to call concurrently with join/leave operations.
+func (h *Hub) ActiveConnections() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	total := 0
+	for _, room := range h.rooms {
+		total += len(room)
+	}
+	return total
+}
+
 func (h *Hub) Broadcast(gameID string, msg WSMessage) {
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -95,6 +118,7 @@ func (c *Client) writePump() {
 	defer c.conn.Close()
 	for data := range c.send {
 		if err := c.conn.WriteMessage(1, data); err != nil {
+			c.disconnectReason = "error"
 			return
 		}
 	}

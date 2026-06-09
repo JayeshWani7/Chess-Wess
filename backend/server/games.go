@@ -118,6 +118,7 @@ func (s *Server) getGame(w http.ResponseWriter, r *http.Request, gameID string) 
 		`SELECT id, white_player_id, black_player_id, status, time_control, active_timeline_id, winner_id, result, created_at, updated_at
 		 FROM games WHERE id = $1`, gameID,
 	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.ActiveTimelineID, &g.WinnerID, &g.Result, &g.CreatedAt, &g.UpdatedAt)
+	defer s.obs.TrackDBQuery("query", "games", time.Now(), &err)
 	if err != nil {
 		http.Error(w, `{"error":"game not found"}`, http.StatusNotFound)
 		return
@@ -157,6 +158,7 @@ func (s *Server) joinGame(w http.ResponseWriter, r *http.Request, gameID string)
 	err := s.db.QueryRow(r.Context(),
 		`SELECT id, white_player_id, black_player_id, status FROM games WHERE id = $1`, gameID,
 	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status)
+	defer s.obs.TrackDBQuery("query", "games", time.Now(), &err)
 	if err != nil {
 		http.Error(w, `{"error":"game not found"}`, http.StatusNotFound)
 		return
@@ -176,10 +178,15 @@ func (s *Server) joinGame(w http.ResponseWriter, r *http.Request, gameID string)
 		return
 	}
 
-	ct, err := s.db.Exec(r.Context(), query, userID, gameID)
-	if err != nil || ct.RowsAffected() == 0 {
-		http.Error(w, `{"error":"could not join game"}`, http.StatusConflict)
-		return
+	{
+		var execErr error
+		defer s.obs.TrackDBQuery("exec", "games", time.Now(), &execErr)
+		ct, e := s.db.Exec(r.Context(), query, userID, gameID)
+		execErr = e
+		if execErr != nil || ct.RowsAffected() == 0 {
+			http.Error(w, `{"error":"could not join game"}`, http.StatusConflict)
+			return
+		}
 	}
 
 	s.hub.Broadcast(gameID, WSMessage{Type: "player_joined", Payload: map[string]string{"user_id": userID}})
@@ -195,6 +202,7 @@ func (s *Server) resignGame(w http.ResponseWriter, r *http.Request, gameID strin
 	err := s.db.QueryRow(r.Context(),
 		`SELECT id, white_player_id, black_player_id, status FROM games WHERE id = $1`, gameID,
 	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status)
+	defer s.obs.TrackDBQuery("query", "games", time.Now(), &err)
 	if err != nil {
 		http.Error(w, `{"error":"game not found"}`, http.StatusNotFound)
 		return
@@ -219,12 +227,16 @@ func (s *Server) resignGame(w http.ResponseWriter, r *http.Request, gameID strin
 	}
 
 	result := "resign"
-	_, err = s.db.Exec(r.Context(),
-		`UPDATE games SET status = 'completed', winner_id = $1, result = $2, updated_at = NOW() WHERE id = $3`,
-		winnerID, result, gameID)
-	if err != nil {
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
-		return
+	{
+		var execErr error
+		defer s.obs.TrackDBQuery("exec", "games", time.Now(), &execErr)
+		_, execErr = s.db.Exec(r.Context(),
+			`UPDATE games SET status = 'completed', winner_id = $1, result = $2, updated_at = NOW() WHERE id = $3`,
+			winnerID, result, gameID)
+		if execErr != nil {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	s.hub.Broadcast(gameID, WSMessage{Type: "game_over", Payload: map[string]string{"winner_id": winnerID, "result": result}})
@@ -270,6 +282,7 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 	err := s.db.QueryRow(r.Context(),
 		`SELECT id FROM users WHERE username = $1 AND is_bot = TRUE`, botUsername,
 	).Scan(&botID)
+	defer s.obs.TrackDBQuery("query", "users", time.Now(), &err)
 	if err != nil {
 		http.Error(w, `{"error":"bot not found — ensure bots are seeded"}`, http.StatusInternalServerError)
 		return
@@ -288,15 +301,19 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var g models.Game
-	err = s.db.QueryRow(r.Context(),
-		`INSERT INTO games (white_player_id, black_player_id, status, time_control)
+	{
+		var insertErr error
+		defer s.obs.TrackDBQuery("query", "games", time.Now(), &insertErr)
+		insertErr = s.db.QueryRow(r.Context(),
+			`INSERT INTO games (white_player_id, black_player_id, status, time_control)
 		 VALUES ($1, $2, 'active', $3)
 		 RETURNING id, white_player_id, black_player_id, status, time_control, created_at, updated_at`,
-		whiteID, blackID, req.TimeControl,
-	).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.CreatedAt, &g.UpdatedAt)
-	if err != nil {
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
-		return
+			whiteID, blackID, req.TimeControl,
+		).Scan(&g.ID, &g.WhitePlayerID, &g.BlackPlayerID, &g.Status, &g.TimeControl, &g.CreatedAt, &g.UpdatedAt)
+		if insertErr != nil {
+			http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+			return
+		}
 	}
 
 	timelineID, err := db.CreateTimeline(r.Context(), s.db, g.ID, userID, "Mainline")
@@ -389,7 +406,9 @@ func (s *Server) listMyGames(w http.ResponseWriter, r *http.Request) {
 	// Count total matching rows
 	var total int
 	countSQL := fmt.Sprintf(`SELECT COUNT(*) FROM games g WHERE %s`, baseWhere)
-	if err := s.db.QueryRow(r.Context(), countSQL, userID).Scan(&total); err != nil {
+	countErr := s.db.QueryRow(r.Context(), countSQL, userID).Scan(&total)
+	defer s.obs.TrackDBQuery("query", "games", time.Now(), &countErr)
+	if countErr != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return
 	}
@@ -410,6 +429,7 @@ func (s *Server) listMyGames(w http.ResponseWriter, r *http.Request) {
 		LIMIT $2 OFFSET $3`, baseWhere)
 
 	rows, err := s.db.Query(r.Context(), querySQL, userID, limit, offset)
+	defer s.obs.TrackDBQuery("query", "games", time.Now(), &err)
 	if err != nil {
 		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
 		return

@@ -3,13 +3,15 @@ package server
 import (
 	"net/http"
 	"strings"
+
+	"github.com/ChessWess/backend/observability"
 )
 
 func (s *Server) routes() {
-	s.mux.Handle("/api/auth/register", cors(http.HandlerFunc(s.handleRegister)))
-	s.mux.Handle("/api/auth/login", cors(http.HandlerFunc(s.handleLogin)))
+	s.mux.Handle("/api/auth/register", cors(observability.InstrumentHandler(s.obs, "/api/auth/register", http.HandlerFunc(s.handleRegister))))
+	s.mux.Handle("/api/auth/login", cors(observability.InstrumentHandler(s.obs, "/api/auth/login", http.HandlerFunc(s.handleLogin))))
 
-	s.mux.Handle("/api/games", cors(s.requireAuth(http.HandlerFunc(s.handleGames))))
+	s.mux.Handle("/api/games", cors(s.requireAuth(observability.InstrumentHandler(s.obs, "/api/games", http.HandlerFunc(s.handleGames)))))
 	s.mux.Handle("/api/games/bot", cors(s.requireAuth(http.HandlerFunc(s.handleCreateBotGame))))
 	s.mux.Handle("/api/games/history", cors(s.requireAuth(http.HandlerFunc(s.listMyGames))))
 	s.mux.Handle("/api/games/", cors(s.requireAuth(http.HandlerFunc(s.handleGameRoutes))))
@@ -18,12 +20,10 @@ func (s *Server) routes() {
 
 	s.mux.Handle("/api/nodes/", cors(s.requireAuth(http.HandlerFunc(s.handleNodeRoutes))))
 
-	s.mux.Handle("/ws", cors(http.HandlerFunc(s.handleWebSocket)))
+	s.mux.Handle("/ws", cors(observability.InstrumentHandler(s.obs, "/ws", http.HandlerFunc(s.handleWebSocket))))
 
-	s.mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	s.mux.HandleFunc("/health", s.handleHealth)
+	s.mux.Handle("/metrics", s.obs.Handler())
 }
 
 func (s *Server) handleGameRoutes(w http.ResponseWriter, r *http.Request) {
