@@ -8,19 +8,62 @@ import (
 )
 
 func (s *Server) routes() {
-	s.mux.Handle("/api/auth/register", cors(observability.InstrumentHandler(s.obs, "/api/auth/register", http.HandlerFunc(s.handleRegister))))
-	s.mux.Handle("/api/auth/login", cors(observability.InstrumentHandler(s.obs, "/api/auth/login", http.HandlerFunc(s.handleLogin))))
+	// Auth endpoints: rate-limited + body-size capped.
+	s.mux.Handle("/api/auth/register",
+		s.cors(
+			rateLimitAuth(
+				maxBodyBytes(maxRequestBodyBytes,
+					observability.InstrumentHandler(s.obs, "/api/auth/register",
+						http.HandlerFunc(s.handleRegister))))))
 
-	s.mux.Handle("/api/games", cors(s.requireAuth(observability.InstrumentHandler(s.obs, "/api/games", http.HandlerFunc(s.handleGames)))))
-	s.mux.Handle("/api/games/bot", cors(s.requireAuth(http.HandlerFunc(s.handleCreateBotGame))))
-	s.mux.Handle("/api/games/history", cors(s.requireAuth(http.HandlerFunc(s.listMyGames))))
-	s.mux.Handle("/api/games/", cors(s.requireAuth(http.HandlerFunc(s.handleGameRoutes))))
+	s.mux.Handle("/api/auth/login",
+		s.cors(
+			rateLimitAuth(
+				maxBodyBytes(maxRequestBodyBytes,
+					observability.InstrumentHandler(s.obs, "/api/auth/login",
+						http.HandlerFunc(s.handleLogin))))))
 
-	s.mux.Handle("/api/users/", cors(s.requireAuth(http.HandlerFunc(s.handleGetUser))))
+	// Game REST endpoints: body-size capped.
+	s.mux.Handle("/api/games",
+		s.cors(
+			s.requireAuth(
+				maxBodyBytes(maxRequestBodyBytes,
+					observability.InstrumentHandler(s.obs, "/api/games",
+						http.HandlerFunc(s.handleGames))))))
 
-	s.mux.Handle("/api/nodes/", cors(s.requireAuth(http.HandlerFunc(s.handleNodeRoutes))))
+	s.mux.Handle("/api/games/bot",
+		s.cors(
+			s.requireAuth(
+				maxBodyBytes(maxRequestBodyBytes,
+					http.HandlerFunc(s.handleCreateBotGame)))))
 
-	s.mux.Handle("/ws", cors(observability.InstrumentHandler(s.obs, "/ws", http.HandlerFunc(s.handleWebSocket))))
+	s.mux.Handle("/api/games/history",
+		s.cors(
+			s.requireAuth(
+				http.HandlerFunc(s.listMyGames))))
+
+	s.mux.Handle("/api/games/",
+		s.cors(
+			s.requireAuth(
+				maxBodyBytes(maxRequestBodyBytes,
+					http.HandlerFunc(s.handleGameRoutes)))))
+
+	s.mux.Handle("/api/users/",
+		s.cors(
+			s.requireAuth(
+				http.HandlerFunc(s.handleGetUser))))
+
+	s.mux.Handle("/api/nodes/",
+		s.cors(
+			s.requireAuth(
+				http.HandlerFunc(s.handleNodeRoutes))))
+
+	// WebSocket: rate-limited at the connection-upgrade level.
+	s.mux.Handle("/ws",
+		s.cors(
+			rateLimitWS(
+				observability.InstrumentHandler(s.obs, "/ws",
+					http.HandlerFunc(s.handleWebSocket)))))
 
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.Handle("/metrics", s.obs.Handler())

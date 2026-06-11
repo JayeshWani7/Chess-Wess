@@ -45,6 +45,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"password must be at least 8 characters"}`, http.StatusBadRequest)
 		return
 	}
+	// bcrypt silently truncates passwords at 72 bytes. Reject longer passwords
+	// so users don't register with "password123..." and later fail to log in.
+	if len(req.Password) > 72 {
+		http.Error(w, `{"error":"password must be at most 72 characters"}`, http.StatusBadRequest)
+		return
+	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {

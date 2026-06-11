@@ -13,11 +13,32 @@ type contextKey string
 
 const userIDKey contextKey = "userID"
 
-func cors(next http.Handler) http.Handler {
+// maxRequestBodyBytes is the global limit applied to all non-WebSocket routes.
+// 1 MiB is generous for any JSON payload this API accepts.
+const maxRequestBodyBytes = 1 << 20 // 1 MiB
+
+// cors sets CORS response headers.  When the server has explicit allowed
+// origins (from Config.AllowedOrigins) the Origin header is validated;
+// otherwise the legacy wildcard "*" is used.
+func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		origin := r.Header.Get("Origin")
+
+		// Determine which origin value to echo back.
+		allowOrigin := ""
+		if len(s.allowedOrigins) == 1 && s.allowedOrigins[0] == "*" {
+			allowOrigin = "*"
+		} else if origin != "" && isOriginAllowed(origin, s.allowedOrigins) {
+			allowOrigin = origin
+			w.Header().Set("Vary", "Origin")
+		}
+
+		if allowOrigin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		}
+
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -26,6 +47,7 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
+// requireAuth validates the JWT and injects the user-id into the request context.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := extractToken(r)
@@ -73,10 +95,9 @@ func validateJWT(tokenStr string) (string, error) {
 	return sub, nil
 }
 
+// jwtSecret returns the JWT signing secret from the environment.
+// LoadConfig() already validates that the secret is present and strong, so
+// this function is only called after a successful startup.
 func jwtSecret() string {
-	s := os.Getenv("JWT_SECRET")
-	if s == "" {
-		return "dev-secret-change-me"
-	}
-	return s
+	return os.Getenv("JWT_SECRET")
 }

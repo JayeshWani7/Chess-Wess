@@ -23,10 +23,24 @@ var (
 	errTimelineAbsent = errors.New("timeline not found")
 )
 
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+// upgrader is initialised per-server so it can validate origins.
+// The zero-value is not used; s.newUpgrader() is called instead.
+
+// newUpgrader builds a websocket.Upgrader that validates the Origin header
+// against the server's allowed-origins list.
+func (s *Server) newUpgrader() websocket.Upgrader {
+	return websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			// If no Origin header (e.g. non-browser clients), allow.
+			if origin == "" {
+				return true
+			}
+			return isOriginAllowed(origin, s.allowedOrigins)
+		},
+	}
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -47,11 +61,15 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	upgrader := s.newUpgrader()
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("ws upgrade error: %v", err)
 		return
 	}
+
+	// Set the initial read deadline; the writePump's pong handler extends it.
+	conn.SetReadDeadline(time.Now().Add(pongWait))
 
 	client := &Client{
 		hub:    s.hub,

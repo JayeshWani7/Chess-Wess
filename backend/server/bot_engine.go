@@ -51,7 +51,7 @@ func (b *BotEngine) Run(ctx context.Context, initialFEN string) {
 		gameID: b.gameID,
 		userID: b.botUserID,
 		send:   incoming,
-		conn:   &nullConn{},
+		conn:   &nullConn{ctx: ctx}, // unblocks when ctx is cancelled
 	}
 	b.server.hub.join <- client
 	defer func() { b.server.hub.leave <- client }()
@@ -207,8 +207,7 @@ func (b *BotEngine) endGame(ctx context.Context, winnerID, result string) {
 	})
 }
 
-func (b *BotEngine) outcomeWinner(outcome chess.Outcome) string {
-	ctx := context.Background()
+func (b *BotEngine) outcomeWinner(ctx context.Context, outcome chess.Outcome) string {
 	var whiteID, blackID string
 	_ = b.server.db.QueryRow(ctx,
 		`SELECT COALESCE(white_player_id::text,''), COALESCE(black_player_id::text,'') FROM games WHERE id = $1`,
@@ -340,6 +339,11 @@ func (b *BotEngine) minimaxMove(game *chess.Game, depth int) *chess.Move {
 	}
 	moves = orderMoves(game, moves)
 
+	// Give the minimax search a 5-second budget so high-rated bots can't block
+	// the goroutine indefinitely on complex positions.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	maximizing := b.botColor == chess.White
 	best := math.Inf(-1)
 	if !maximizing {
@@ -347,11 +351,15 @@ func (b *BotEngine) minimaxMove(game *chess.Game, depth int) *chess.Move {
 	}
 	var bestMoves []*chess.Move
 	for _, m := range moves {
+		// Bail out early if the search budget is exhausted.
+		if ctx.Err() != nil {
+			break
+		}
 		g2 := game.Clone()
 		if err := g2.Move(m); err != nil {
 			continue
 		}
-		score := b.alphaBeta(g2, depth-1, math.Inf(-1), math.Inf(1), !maximizing)
+		score := b.alphaBeta(ctx, g2, depth-1, math.Inf(-1), math.Inf(1), !maximizing)
 		if maximizing {
 			if score > best {
 				best = score
@@ -374,7 +382,12 @@ func (b *BotEngine) minimaxMove(game *chess.Game, depth int) *chess.Move {
 	return bestMoves[rand.Intn(len(bestMoves))]
 }
 
-func (b *BotEngine) alphaBeta(game *chess.Game, depth int, alpha, beta float64, maximizing bool) float64 {
+func (b *BotEngine) alphaBeta(ctx context.Context, game *chess.Game, depth int, alpha, beta float64, maximizing bool) float64 {
+	// Respect the search deadline.
+	if ctx.Err() != nil {
+		return 0
+	}
+
 	pos := game.Position()
 	status := pos.Status()
 	if status == chess.Checkmate {
@@ -401,11 +414,14 @@ func (b *BotEngine) alphaBeta(game *chess.Game, depth int, alpha, beta float64, 
 	if maximizing {
 		val := math.Inf(-1)
 		for _, m := range moves {
+			if ctx.Err() != nil {
+				break
+			}
 			g2 := game.Clone()
 			if err := g2.Move(m); err != nil {
 				continue
 			}
-			val = math.Max(val, b.alphaBeta(g2, depth-1, alpha, beta, false))
+			val = math.Max(val, b.alphaBeta(ctx, g2, depth-1, alpha, beta, false))
 			alpha = math.Max(alpha, val)
 			if beta <= alpha {
 				break
@@ -415,11 +431,14 @@ func (b *BotEngine) alphaBeta(game *chess.Game, depth int, alpha, beta float64, 
 	}
 	val := math.Inf(1)
 	for _, m := range moves {
+		if ctx.Err() != nil {
+			break
+		}
 		g2 := game.Clone()
 		if err := g2.Move(m); err != nil {
 			continue
 		}
-		val = math.Min(val, b.alphaBeta(g2, depth-1, alpha, beta, true))
+		val = math.Min(val, b.alphaBeta(ctx, g2, depth-1, alpha, beta, true))
 		beta = math.Min(beta, val)
 		if beta <= alpha {
 			break
@@ -571,10 +590,13 @@ func outcomeToResult(outcome chess.Outcome, method chess.Method) string {
 	return "checkmate"
 }
 
-type nullConn struct{}
+type nullConn struct {
+	ctx context.Context
+}
 
 func (n *nullConn) ReadMessage() (int, []byte, error) {
-	select {}
+	<-n.ctx.Done()
+	return 0, nil, n.ctx.Err()
 }
 func (n *nullConn) WriteMessage(_ int, _ []byte) error { return nil }
 func (n *nullConn) Close() error                       { return nil }

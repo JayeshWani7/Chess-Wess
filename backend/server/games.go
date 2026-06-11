@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -338,7 +337,11 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	engine := NewBotEngine(s, g.ID, botID, botColor, req.BotRating)
-	go engine.Run(context.Background(), initialFEN)
+	s.botWg.Add(1)
+	go func() {
+		defer s.botWg.Done()
+		engine.Run(s.botCtx, initialFEN)
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -390,16 +393,19 @@ func (s *Server) listMyGames(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := (page - 1) * limit
 
-	// Build outcome filter clause
+	// Build outcome filter clause using parameterized args to avoid any injection risk.
+	// $1 is already bound to userID; additional args start at $4 (after $1, $2=limit, $3=offset).
 	var filterClause string
+	var filterArgs []interface{}
 	switch filterParam {
 	case "win":
-		filterClause = fmt.Sprintf(" AND g.winner_id = '%s'", userID)
+		filterClause = " AND g.winner_id = $1"
 	case "loss":
-		filterClause = fmt.Sprintf(" AND g.winner_id IS NOT NULL AND g.winner_id != '%s'", userID)
+		filterClause = " AND g.winner_id IS NOT NULL AND g.winner_id != $1"
 	case "draw":
 		filterClause = " AND g.result IN ('stalemate','draw')"
 	}
+	_ = filterArgs // all filter conditions reuse $1 (userID)
 
 	baseWhere := fmt.Sprintf(
 		`(g.white_player_id = $1 OR g.black_player_id = $1) AND g.status IN ('completed','abandoned')%s`,
