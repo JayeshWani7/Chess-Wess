@@ -59,11 +59,11 @@ func (s *Server) routes() {
 				http.HandlerFunc(s.handleNodeRoutes))))
 
 	// WebSocket: rate-limited at the connection-upgrade level.
+	// Do not wrap with InstrumentHandler since it breaks WebSocket hijacking.
 	s.mux.Handle("/ws",
 		s.cors(
 			rateLimitWS(
-				observability.InstrumentHandler(s.obs, "/ws",
-					http.HandlerFunc(s.handleWebSocket)))))
+				http.HandlerFunc(s.handleWebSocket))))
 
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.Handle("/metrics", s.obs.Handler())

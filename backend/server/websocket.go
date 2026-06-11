@@ -61,6 +61,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure the bot is running if this is a bot game
+	s.StartBotIfNeeded(r.Context(), gameID)
+
 	upgrader := s.newUpgrader()
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

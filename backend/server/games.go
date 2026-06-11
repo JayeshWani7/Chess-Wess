@@ -336,11 +336,25 @@ func (s *Server) handleCreateBotGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := db.SetActiveTimelineID(r.Context(), s.db, g.ID, timelineID); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to set active timeline: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+	g.ActiveTimelineID = &timelineID
+
+	s.botMu.Lock()
+	s.runningBots[g.ID] = true
+	s.botMu.Unlock()
+
 	engine := NewBotEngine(s, g.ID, botID, botColor, req.BotRating)
 	s.botWg.Add(1)
 	go func() {
 		defer s.botWg.Done()
 		engine.Run(s.botCtx, initialFEN)
+
+		s.botMu.Lock()
+		delete(s.runningBots, g.ID)
+		s.botMu.Unlock()
 	}()
 
 	w.Header().Set("Content-Type", "application/json")

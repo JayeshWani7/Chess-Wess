@@ -29,6 +29,10 @@ type Server struct {
 	botWg      sync.WaitGroup
 	botCancel  context.CancelFunc // cancels the shared bot context
 	botCtx     context.Context
+
+	// Bot tracking map to ensure only one bot engine runs per active game.
+	botMu       sync.Mutex
+	runningBots map[string]bool // key: gameID
 }
 
 // New constructs the server with a validated Config.
@@ -57,6 +61,7 @@ func New(pool *pgxpool.Pool, rdb *redis.Client, cfg *Config) *Server {
 		hubDone:        make(chan struct{}),
 		botCtx:         botCtx,
 		botCancel:      botCancel,
+		runningBots:    make(map[string]bool),
 	}
 
 	go func() {
@@ -96,3 +101,91 @@ func (s *Server) Shutdown() {
 	s.hub.stop <- struct{}{}
 	<-s.hubDone
 }
+
+func (s *Server) StartBotIfNeeded(ctx context.Context, gameID string) {
+	s.botMu.Lock()
+	if s.runningBots[gameID] {
+		s.botMu.Unlock()
+		return
+	}
+	s.runningBots[gameID] = true
+	s.botMu.Unlock()
+
+	// If query or check fails, make sure to clean up the map entry so we can try again
+	cleanup := func() {
+		s.botMu.Lock()
+		delete(s.runningBots, gameID)
+		s.botMu.Unlock()
+	}
+
+	// Query DB to check if this game has a bot
+	var whitePlayerID, blackPlayerID *string
+	var gameStatus string
+	err := s.db.QueryRow(ctx,
+		`SELECT white_player_id, black_player_id, status FROM games WHERE id = $1`, gameID,
+	).Scan(&whitePlayerID, &blackPlayerID, &gameStatus)
+	if err != nil {
+		cleanup()
+		return
+	}
+
+	// Only active games should have running bots
+	if gameStatus != "active" {
+		cleanup()
+		return
+	}
+
+	var botID string
+	var botColor string
+	var botRating int
+
+	if whitePlayerID != nil {
+		var isBot bool
+		var rating int
+		err := s.db.QueryRow(ctx,
+			`SELECT is_bot, rating FROM users WHERE id = $1`, *whitePlayerID,
+		).Scan(&isBot, &rating)
+		if err == nil && isBot {
+			botID = *whitePlayerID
+			botColor = "w"
+			botRating = rating
+		}
+	}
+
+	if botID == "" && blackPlayerID != nil {
+		var isBot bool
+		var rating int
+		err := s.db.QueryRow(ctx,
+			`SELECT is_bot, rating FROM users WHERE id = $1`, *blackPlayerID,
+		).Scan(&isBot, &rating)
+		if err == nil && isBot {
+			botID = *blackPlayerID
+			botColor = "b"
+			botRating = rating
+		}
+	}
+
+	if botID == "" {
+		cleanup()
+		return
+	}
+
+	// Start bot engine starting from the latest state of the active timeline
+	parentNode, _, err := s.resolveTimelineParent(ctx, gameID, "", "")
+	if err != nil {
+		cleanup()
+		return
+	}
+
+	engine := NewBotEngine(s, gameID, botID, botColor, botRating)
+	s.botWg.Add(1)
+	go func() {
+		defer s.botWg.Done()
+		engine.Run(s.botCtx, parentNode.BoardState)
+
+		s.botMu.Lock()
+		delete(s.runningBots, gameID)
+		s.botMu.Unlock()
+	}()
+}
+

@@ -23,6 +23,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		createEnergyTransactionsTable,
 		createTimelineMetadataTable,
 		alterTimelinesAddLocking,
+		fixNullActiveTimeline,
 	}
 
 	for i, m := range migrations {
@@ -275,3 +276,15 @@ DO $$ BEGIN
   END IF;
 END $$;
 `
+
+const fixNullActiveTimeline = `
+UPDATE games g
+SET active_timeline_id = (
+  SELECT id FROM timelines t
+  WHERE t.game_id = g.id
+  ORDER BY created_at ASC
+  LIMIT 1
+)
+WHERE active_timeline_id IS NULL;
+`
+
