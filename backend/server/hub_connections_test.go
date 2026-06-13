@@ -43,9 +43,11 @@ func TestHubActiveConnectionsAccuracy(t *testing.T) {
 
 			h.mu.Lock()
 			if h.rooms[c.gameID] == nil {
-				h.rooms[c.gameID] = make(map[*Client]struct{})
+				h.rooms[c.gameID] = &GameRoom{
+					clients: make(map[*Client]struct{}),
+				}
 			}
-			h.rooms[c.gameID][c] = struct{}{}
+			h.rooms[c.gameID].clients[c] = struct{}{}
 			h.mu.Unlock()
 		}
 
@@ -60,8 +62,8 @@ func TestHubActiveConnectionsAccuracy(t *testing.T) {
 			c := clients[i]
 			h.mu.Lock()
 			if room, ok := h.rooms[c.gameID]; ok {
-				delete(room, c)
-				if len(room) == 0 {
+				delete(room.clients, c)
+				if len(room.clients) == 0 {
 					delete(h.rooms, c.gameID)
 				}
 			}

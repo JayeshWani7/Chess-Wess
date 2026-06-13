@@ -12,6 +12,7 @@ import (
 
 // WSMessage is the envelope used for every WebSocket message.
 type WSMessage struct {
+	Seq     uint64      `json:"seq,omitempty"`
 	Type    string      `json:"type"`
 	Payload interface{} `json:"payload"`
 }
@@ -24,6 +25,8 @@ type Client struct {
 	send             chan []byte
 	conn             wsConn
 	disconnectReason string
+	lastSeq          uint64
+	hasLastSeq       bool
 }
 
 // wsConn is the interface satisfied by both *websocket.Conn and the bot nullConn.
@@ -33,10 +36,16 @@ type wsConn interface {
 	Close() error
 }
 
+type GameRoom struct {
+	clients map[*Client]struct{}
+	seq     uint64
+	history []WSMessage
+}
+
 // Hub manages all connected clients, grouped by game room.
 type Hub struct {
 	mu      sync.RWMutex
-	rooms   map[string]map[*Client]struct{}
+	rooms   map[string]*GameRoom
 	join    chan *Client
 	leave   chan *Client
 	message chan roomMessage
@@ -46,13 +55,13 @@ type Hub struct {
 
 type roomMessage struct {
 	gameID string
-	data   []byte
+	msg    WSMessage
 }
 
 // NewHub creates and returns an uninitialised Hub; call Run() in a goroutine.
 func NewHub(obs *observability.Registry) *Hub {
 	return &Hub{
-		rooms:   make(map[string]map[*Client]struct{}),
+		rooms:   make(map[string]*GameRoom),
 		join:    make(chan *Client, 64),
 		leave:   make(chan *Client, 64),
 		message: make(chan roomMessage, 256),
@@ -70,20 +79,21 @@ func (h *Hub) Run() {
 			// Close all client send channels so writePumps exit cleanly.
 			h.mu.Lock()
 			for _, room := range h.rooms {
-				for c := range room {
+				for c := range room.clients {
 					close(c.send)
 				}
 			}
-			h.rooms = make(map[string]map[*Client]struct{})
+			h.rooms = make(map[string]*GameRoom)
 			h.mu.Unlock()
 			return
 
 		case c := <-h.join:
 			h.mu.Lock()
-			if h.rooms[c.gameID] == nil {
-				h.rooms[c.gameID] = make(map[*Client]struct{})
+			room := h.getOrCreateRoom(c.gameID)
+			room.clients[c] = struct{}{}
+			if c.hasLastSeq {
+				h.recoverClient(c, room)
 			}
-			h.rooms[c.gameID][c] = struct{}{}
 			h.mu.Unlock()
 			if h.obs != nil {
 				h.obs.RecordWSConnect()
@@ -92,8 +102,8 @@ func (h *Hub) Run() {
 		case c := <-h.leave:
 			h.mu.Lock()
 			if room, ok := h.rooms[c.gameID]; ok {
-				delete(room, c)
-				if len(room) == 0 {
+				delete(room.clients, c)
+				if len(room.clients) == 0 {
 					delete(h.rooms, c.gameID)
 				}
 			}
@@ -112,18 +122,96 @@ func (h *Hub) Run() {
 				close(c.send)
 			}
 
-		case msg := <-h.message:
-			h.mu.RLock()
-			for c := range h.rooms[msg.gameID] {
+		case rMsg := <-h.message:
+			h.mu.Lock()
+			room := h.getOrCreateRoom(rMsg.gameID)
+			room.seq++
+			rMsg.msg.Seq = room.seq
+
+			data, err := json.Marshal(rMsg.msg)
+			if err != nil {
+				log.Printf("hub: marshal error: %v", err)
+				h.mu.Unlock()
+				continue
+			}
+
+			room.history = append(room.history, rMsg.msg)
+			if len(room.history) > 500 {
+				copy(room.history, room.history[1:])
+				room.history = room.history[:500]
+			}
+
+			for c := range room.clients {
 				select {
-				case c.send <- msg.data:
+				case c.send <- data:
 				default:
-					log.Printf("hub: dropping message for slow client %s", c.userID)
+					log.Printf("hub: slow client detected, disconnecting %s", c.userID)
+					go c.CloseWithReason(4000, "slow_client")
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
+}
+
+func (h *Hub) getOrCreateRoom(gameID string) *GameRoom {
+	room, ok := h.rooms[gameID]
+	if !ok {
+		room = &GameRoom{
+			clients: make(map[*Client]struct{}),
+			history: make([]WSMessage, 0, 200),
+		}
+		h.rooms[gameID] = room
+	}
+	return room
+}
+
+func (h *Hub) recoverClient(c *Client, room *GameRoom) {
+	if c.lastSeq == room.seq {
+		return
+	}
+	if len(room.history) == 0 {
+		h.sendResync(c)
+		return
+	}
+	firstSeq := room.history[0].Seq
+	if c.lastSeq < firstSeq-1 {
+		h.sendResync(c)
+		return
+	}
+	for _, msg := range room.history {
+		if msg.Seq > c.lastSeq {
+			data, err := json.Marshal(msg)
+			if err == nil {
+				select {
+				case c.send <- data:
+				default:
+					log.Printf("hub: failed to replay message to client %s (buffer full)", c.userID)
+				}
+			}
+		}
+	}
+}
+
+func (h *Hub) sendResync(c *Client) {
+	msg := WSMessage{
+		Type:    "resync",
+		Payload: "state out of sync",
+	}
+	data, _ := json.Marshal(msg)
+	select {
+	case c.send <- data:
+	default:
+	}
+}
+
+func (c *Client) CloseWithReason(code int, reason string) {
+	c.disconnectReason = reason
+	if wc, ok := c.conn.(*websocket.Conn); ok {
+		msg := websocket.FormatCloseMessage(code, reason)
+		_ = wc.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
+	}
+	_ = c.conn.Close()
 }
 
 // ActiveConnections returns the total number of connected clients.
@@ -132,18 +220,14 @@ func (h *Hub) ActiveConnections() int {
 	defer h.mu.RUnlock()
 	total := 0
 	for _, room := range h.rooms {
-		total += len(room)
+		total += len(room.clients)
 	}
 	return total
 }
 
 // Broadcast sends msg to every client in the named game room.
 func (h *Hub) Broadcast(gameID string, msg WSMessage) {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return
-	}
-	h.message <- roomMessage{gameID: gameID, data: data}
+	h.message <- roomMessage{gameID: gameID, msg: msg}
 }
 
 // --------------------------------------------------------------------------

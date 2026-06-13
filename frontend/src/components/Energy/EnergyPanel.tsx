@@ -63,7 +63,6 @@ export const TimelineStatusCard: React.FC<TimelineStatusCardProps> = ({
   className = "",
 }) => {
   const timelineMetadata = useGameStore((state) => state.timelineMetadata[timelineId]);
-  const playerEnergy = useGameStore((state) => state.playerEnergy);
 
   if (!timelineMetadata) {
     return null;

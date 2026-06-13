@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/ChessWess/backend/db"
@@ -71,15 +72,27 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lastSeqStr := r.URL.Query().Get("last_seq")
+	var lastSeq uint64
+	var hasLastSeq bool
+	if lastSeqStr != "" {
+		if val, err := strconv.ParseUint(lastSeqStr, 10, 64); err == nil {
+			lastSeq = val
+			hasLastSeq = true
+		}
+	}
+
 	// Set the initial read deadline; the writePump's pong handler extends it.
 	conn.SetReadDeadline(time.Now().Add(pongWait))
 
 	client := &Client{
-		hub:    s.hub,
-		gameID: gameID,
-		userID: userID,
-		send:   make(chan []byte, 64),
-		conn:   conn,
+		hub:        s.hub,
+		gameID:     gameID,
+		userID:     userID,
+		send:       make(chan []byte, 64),
+		conn:       conn,
+		lastSeq:    lastSeq,
+		hasLastSeq: hasLastSeq,
 	}
 
 	s.hub.join <- client
@@ -644,6 +657,42 @@ func (s *Server) handleRewindMessage(c *Client, msg WSMessage) {
 		return
 	}
 
+	// Idempotency check: see if a branch root node created by this user already branches off this parent node
+	var existingTimelineID, existingBranchName, existingRootNodeID string
+	var existingBoardState string
+	var existingTurnNumber int
+	var existingCreatedAt time.Time
+
+	err = s.db.QueryRow(ctx,
+		`SELECT t.id, t.timeline_name, t.root_node_id, gn.board_state, gn.turn_number, t.created_at
+		 FROM timelines t
+		 INNER JOIN game_nodes gn ON t.root_node_id = gn.id
+		 INNER JOIN node_children nc ON gn.id = nc.child_node_id
+		 WHERE t.game_id = $1
+		   AND t.created_by_user = $2
+		   AND nc.parent_node_id = $3
+		 LIMIT 1`,
+		c.gameID, c.userID, fromNode.ID,
+	).Scan(&existingTimelineID, &existingBranchName, &existingRootNodeID, &existingBoardState, &existingTurnNumber, &existingCreatedAt)
+
+	if err == nil {
+		// Branch already exists! Return and broadcast existing timeline
+		s.hub.Broadcast(c.gameID, WSMessage{
+			Type: "timeline_created",
+			Payload: map[string]interface{}{
+				"timeline_id":     existingTimelineID,
+				"timeline_name":   existingBranchName,
+				"root_node_id":    existingRootNodeID,
+				"from_node_id":    fromNode.ID,
+				"board_state":     existingBoardState,
+				"turn_number":     existingTurnNumber,
+				"created_by_user": c.userID,
+				"created_at":      existingCreatedAt.UTC().Format(time.RFC3339),
+			},
+		})
+		return
+	}
+
 	branchName := fmt.Sprintf("Branch T%d", fromNode.TurnNumber)
 	timelineID, err := db.CreateTimeline(ctx, s.db, c.gameID, c.userID, branchName)
 	if err != nil {
@@ -690,6 +739,19 @@ func (s *Server) handleSwitchTimelineMessage(c *Client, msg WSMessage) {
 	}
 
 	ctx := context.Background()
+	var currentActive *string
+	err := s.db.QueryRow(ctx, `SELECT active_timeline_id FROM games WHERE id = $1`, c.gameID).Scan(&currentActive)
+	if err == nil && currentActive != nil && *currentActive == timelineID {
+		// Already active, just broadcast to verify/sync
+		s.hub.Broadcast(c.gameID, WSMessage{
+			Type: "timeline_switched",
+			Payload: map[string]string{
+				"timeline_id": timelineID,
+			},
+		})
+		return
+	}
+
 	if err := db.SetActiveTimelineID(ctx, s.db, c.gameID, timelineID); err != nil {
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "timeline not found"})
 		return

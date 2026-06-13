@@ -129,6 +129,42 @@ export default function GamePage() {
     }
   }, [token, activeGameId, setTimelineData]);
 
+  const syncFullState = useCallback(async () => {
+    if (!token || !activeGameId || !gameInfo) return;
+    try {
+      const limit = timelineLimitRef.current ?? undefined;
+      const oppId = playerColor === "w" ? gameInfo.black_player_id : gameInfo.white_player_id;
+
+      const [timelineData, game, playerEnergy, opponentEnergy] = await Promise.all([
+        api.getGameTimeline(token, activeGameId, limit),
+        api.getGame(token, activeGameId),
+        api.getPlayerEnergy(token, activeGameId),
+        oppId ? api.getOpponentEnergy(token, activeGameId, oppId) : Promise.resolve(null),
+      ]);
+
+      if (game) {
+        setActiveGame(game.id, game as Parameters<typeof setActiveGame>[1], playerColor || "w");
+      }
+      if (timelineData) {
+        setTimelineData(timelineData.timelines, timelineData.active_timeline_id ?? null);
+      }
+      if (playerEnergy) {
+        setPlayerEnergy(playerEnergy);
+      }
+      if (opponentEnergy) {
+        setOpponentEnergy(opponentEnergy);
+      }
+      console.log("[Sync] full state sync complete");
+    } catch (err) {
+      console.error("[Sync] failed to sync full state", err);
+    }
+  }, [token, activeGameId, gameInfo, playerColor, setActiveGame, setTimelineData, setPlayerEnergy, setOpponentEnergy]);
+
+  const syncFullStateRef = useRef(syncFullState);
+  useEffect(() => {
+    syncFullStateRef.current = syncFullState;
+  }, [syncFullState]);
+
   useEffect(() => {
     if (!activeGameId || !token || connectedRef.current) return;
     connectedRef.current = true;
@@ -217,6 +253,11 @@ export default function GamePage() {
             p.result as Parameters<typeof setGameOver>[0],
             p.winner_id || null
           );
+          break;
+        }
+        case "resync": {
+          console.log("[WS] server requested full state resync");
+          syncFullStateRef.current();
           break;
         }
         default:

@@ -11,11 +11,13 @@ export type WSMessageType =
   | "game_over"
   | "timer_update"
   | "error"
+  | "resync"
   | "pong";
 
 export interface WSMessage<T = unknown> {
   type: WSMessageType;
   payload: T;
+  seq?: number;
 }
 
 type MessageHandler = (msg: WSMessage) => void;
@@ -27,10 +29,12 @@ class ChessWSClient {
   private gameId: string | null = null;
   private token: string | null = null;
   private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private lastSeq: number = 0;
 
   connect(gameId: string, token: string) {
     this.gameId = gameId;
     this.token = token;
+    this.lastSeq = 0; // reset on fresh connect
     this.openSocket();
   }
 
@@ -38,43 +42,38 @@ class ChessWSClient {
     if (!this.gameId || !this.token) return;
 
     const base = import.meta.env.VITE_WS_URL ?? `ws://${window.location.host}`;
-    const url = `${base}/ws?game_id=${this.gameId}&token=${this.token}`;
+    let url = `${base}/ws?game_id=${this.gameId}&token=${this.token}`;
+    if (this.lastSeq > 0) {
+      url += `&last_seq=${this.lastSeq}`;
+    }
 
     this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
-      console.log("[WS] connected to game", this.gameId);
+      console.log("[WS] connected to game", this.gameId, "lastSeq:", this.lastSeq);
       this.startPing();
     };
 
     this.ws.onmessage = async (event) => {
       try {
+        let msg: any = null;
         if (typeof event.data === "string") {
-          const msg: WSMessage = JSON.parse(event.data);
-          this.handlers.forEach((h) => h(msg));
-          return;
-        }
-
-        if (event.data instanceof Blob) {
+          msg = JSON.parse(event.data);
+        } else if (event.data instanceof Blob) {
           const text = await event.data.text();
-          const msg: WSMessage = JSON.parse(text);
-          this.handlers.forEach((h) => h(msg));
-          return;
-        }
-
-        if (event.data instanceof ArrayBuffer) {
+          msg = JSON.parse(text);
+        } else if (event.data instanceof ArrayBuffer) {
           const text = new TextDecoder().decode(event.data);
-          const msg: WSMessage = JSON.parse(text);
-          this.handlers.forEach((h) => h(msg));
-          return;
+          msg = JSON.parse(text);
+        } else if (event.data && typeof event.data === "object") {
+          msg = event.data;
         }
 
-        if (event.data && typeof event.data === "object") {
-          this.handlers.forEach((h) => h(event.data as WSMessage));
-          return;
+        if (msg) {
+          this.handleIncomingMessage(msg);
+        } else {
+          console.warn("[WS] unknown message payload", event.data);
         }
-
-        console.warn("[WS] unknown message payload", event.data);
       } catch {
         console.warn("[WS] failed to parse message", event.data);
       }
@@ -89,6 +88,20 @@ class ChessWSClient {
     this.ws.onerror = (err) => {
       console.error("[WS] error", err);
     };
+  }
+
+  private handleIncomingMessage(msg: any) {
+    if (msg && typeof msg === "object") {
+      const seq = typeof msg.seq === "number" ? msg.seq : (msg.seq ? parseInt(msg.seq, 10) : undefined);
+      if (seq !== undefined && !isNaN(seq)) {
+        if (seq <= this.lastSeq) {
+          console.log("[WS] discarding duplicate message", msg.type, "seq:", seq, "lastSeq:", this.lastSeq);
+          return;
+        }
+        this.lastSeq = seq;
+      }
+      this.handlers.forEach((h) => h(msg as WSMessage));
+    }
   }
 
   send(msg: WSMessage) {
