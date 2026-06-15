@@ -168,7 +168,19 @@ func (s *Server) refundEnergy(w http.ResponseWriter, r *http.Request, gameID, pl
 		return
 	}
 
-	err := db.RefundEnergy(ctx, s.db, gameID, playerID, req.Amount, req.Reason)
+	game, err := db.GetGame(ctx, s.db, gameID)
+	if err != nil {
+		http.Error(w, "Game not found", http.StatusNotFound)
+		return
+	}
+
+	if game.WhitePlayerID == nil || game.BlackPlayerID == nil ||
+		(*game.WhitePlayerID != playerID && *game.BlackPlayerID != playerID) {
+		http.Error(w, "Not authorized", http.StatusForbidden)
+		return
+	}
+
+	err = db.RefundEnergy(ctx, s.db, gameID, playerID, req.Amount, req.Reason)
 	if err != nil {
 		http.Error(w, "Failed to refund energy", http.StatusInternalServerError)
 		return

@@ -62,6 +62,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate game existence and fetch player IDs
+	var whiteID, blackID *string
+	err = s.db.QueryRow(r.Context(),
+		`SELECT white_player_id, black_player_id FROM games WHERE id = $1`,
+		gameID,
+	).Scan(&whiteID, &blackID)
+	if err != nil {
+		http.Error(w, "game not found", http.StatusNotFound)
+		return
+	}
+
+	isPlayer := (whiteID != nil && *whiteID == userID) || (blackID != nil && *blackID == userID)
+
 	// Ensure the bot is running if this is a bot game
 	s.StartBotIfNeeded(r.Context(), gameID)
 
@@ -93,15 +106,18 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		conn:       conn,
 		lastSeq:    lastSeq,
 		hasLastSeq: hasLastSeq,
+		isPlayer:   isPlayer,
 	}
 
 	s.hub.join <- client
 	go client.writePump()
 
-	s.hub.Broadcast(gameID, WSMessage{
-		Type:    "player_connected",
-		Payload: map[string]string{"user_id": userID},
-	})
+	if isPlayer {
+		s.hub.Broadcast(gameID, WSMessage{
+			Type:    "player_connected",
+			Payload: map[string]string{"user_id": userID},
+		})
+	}
 
 	s.readPump(client)
 }
@@ -110,10 +126,12 @@ func (s *Server) readPump(c *Client) {
 	c.disconnectReason = "normal"
 	defer func() {
 		s.hub.leave <- c
-		s.hub.Broadcast(c.gameID, WSMessage{
-			Type:    "player_disconnected",
-			Payload: map[string]string{"user_id": c.userID},
-		})
+		if c.isPlayer {
+			s.hub.Broadcast(c.gameID, WSMessage{
+				Type:    "player_disconnected",
+				Payload: map[string]string{"user_id": c.userID},
+			})
+		}
 	}()
 
 	for {
@@ -131,10 +149,22 @@ func (s *Server) readPump(c *Client) {
 
 		switch msg.Type {
 		case "move":
+			if !c.isPlayer {
+				c.send <- mustMarshal(WSMessage{Type: "error", Payload: "forbidden: only players can make moves"})
+				continue
+			}
 			s.handleMoveMessage(c, msg)
 		case "rewind":
+			if !c.isPlayer {
+				c.send <- mustMarshal(WSMessage{Type: "error", Payload: "forbidden: only players can rewind"})
+				continue
+			}
 			s.handleRewindMessage(c, msg)
 		case "switch_timeline":
+			if !c.isPlayer {
+				c.send <- mustMarshal(WSMessage{Type: "error", Payload: "forbidden: only players can switch timelines"})
+				continue
+			}
 			s.handleSwitchTimelineMessage(c, msg)
 		case "ping":
 			c.send <- mustMarshal(WSMessage{Type: "pong"})

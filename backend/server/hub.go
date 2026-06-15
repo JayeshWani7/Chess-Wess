@@ -27,6 +27,7 @@ type Client struct {
 	disconnectReason string
 	lastSeq          uint64
 	hasLastSeq       bool
+	isPlayer         bool
 }
 
 // wsConn is the interface satisfied by both *websocket.Conn and the bot nullConn.

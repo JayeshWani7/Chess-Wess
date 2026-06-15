@@ -28,6 +28,18 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPost {
+		userID := r.Context().Value(userIDKey).(string)
+		game, err := db.GetGame(r.Context(), s.db, gameID)
+		if err != nil {
+			http.Error(w, `{"error":"game not found"}`, http.StatusNotFound)
+			return
+		}
+		if game.WhitePlayerID == nil || game.BlackPlayerID == nil ||
+			(*game.WhitePlayerID != userID && *game.BlackPlayerID != userID) {
+			http.Error(w, `{"error":"not authorized"}`, http.StatusForbidden)
+			return
+		}
+
 		var payload struct {
 			TimelineID   string `json:"timeline_id"`
 			TimelineName string `json:"timeline_name"`
@@ -198,6 +210,18 @@ func (s *Server) handleActiveTimeline(w http.ResponseWriter, r *http.Request, ga
 			"active_timeline_id": activeTimelineID,
 		})
 	case http.MethodPost:
+		userID := r.Context().Value(userIDKey).(string)
+		game, err := db.GetGame(r.Context(), s.db, gameID)
+		if err != nil {
+			http.Error(w, `{"error":"game not found"}`, http.StatusNotFound)
+			return
+		}
+		if game.WhitePlayerID == nil || game.BlackPlayerID == nil ||
+			(*game.WhitePlayerID != userID && *game.BlackPlayerID != userID) {
+			http.Error(w, `{"error":"not authorized"}`, http.StatusForbidden)
+			return
+		}
+
 		var payload struct {
 			TimelineID string `json:"timeline_id"`
 		}
