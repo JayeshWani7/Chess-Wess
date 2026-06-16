@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ChessWess/backend/db"
 	"github.com/ChessWess/backend/models"
@@ -57,6 +58,9 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"timeline not found"}`, http.StatusNotFound)
 			return
 		}
+		if s.rdb != nil {
+			_ = s.rdb.Del(r.Context(), "game:"+gameID+":timeline").Err()
+		}
 		s.hub.Broadcast(gameID, WSMessage{
 			Type: "timeline_renamed",
 			Payload: map[string]string{
@@ -79,18 +83,6 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	timelines, err := db.GetGameTimelines(r.Context(), s.db, gameID)
-	if err != nil {
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
-		return
-	}
-
-	activeTimelineID, err := db.GetActiveTimelineID(r.Context(), s.db, gameID)
-	if err != nil {
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
-		return
-	}
-
 	var nodeLimit int
 	if rawLimit := r.URL.Query().Get("node_limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
@@ -102,6 +94,28 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 			parsed = 2000
 		}
 		nodeLimit = parsed
+	}
+
+	var cacheKey string
+	if s.rdb != nil && nodeLimit == 0 {
+		cacheKey = "game:" + gameID + ":timeline"
+		if cachedVal, err := s.rdb.Get(r.Context(), cacheKey).Result(); err == nil && cachedVal != "" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(cachedVal))
+			return
+		}
+	}
+
+	timelines, err := db.GetGameTimelines(r.Context(), s.db, gameID)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	activeTimelineID, err := db.GetActiveTimelineID(r.Context(), s.db, gameID)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
 	}
 
 	type TimelineData struct {
@@ -140,12 +154,24 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	responseObj := map[string]interface{}{
 		"game_id":            gameID,
 		"active_timeline_id": activeTimelineID,
 		"timelines":          result,
-	})
+	}
+
+	responseBytes, err := json.Marshal(responseObj)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if cacheKey != "" {
+		_ = s.rdb.Set(r.Context(), cacheKey, responseBytes, 2*time.Hour).Err()
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(responseBytes)
 }
 
 func (s *Server) handleGameReplay(w http.ResponseWriter, r *http.Request) {
@@ -232,6 +258,9 @@ func (s *Server) handleActiveTimeline(w http.ResponseWriter, r *http.Request, ga
 		if err := db.SetActiveTimelineID(r.Context(), s.db, gameID, payload.TimelineID); err != nil {
 			http.Error(w, `{"error":"timeline not found"}`, http.StatusNotFound)
 			return
+		}
+		if s.rdb != nil {
+			_ = s.rdb.Del(r.Context(), "game:"+gameID+":timeline").Err()
 		}
 		s.hub.Broadcast(gameID, WSMessage{
 			Type: "timeline_switched",

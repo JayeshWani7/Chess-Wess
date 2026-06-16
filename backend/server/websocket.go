@@ -292,6 +292,9 @@ func (s *Server) handleMoveMessage(c *Client, msg WSMessage) {
 
 	latencyMs := time.Since(start).Seconds() * 1000
 	s.obs.RecordMove(c.gameID, moveResult.TimelineID, "success", time.Since(start))
+	if s.rdb != nil {
+		_ = s.rdb.Del(ctx, "game:"+c.gameID+":timeline").Err()
+	}
 	s.log.Info("move_applied",
 		append(observability.GameFields(c.gameID, moveResult.TimelineID, moveResult.NodeID, moveResult.TurnNumber),
 			"user_id", c.userID,
@@ -741,6 +744,10 @@ func (s *Server) handleRewindMessage(c *Client, msg WSMessage) {
 		return
 	}
 
+	if s.rdb != nil {
+		_ = s.rdb.Del(ctx, "game:"+c.gameID+":timeline").Err()
+	}
+
 	s.hub.Broadcast(c.gameID, WSMessage{
 		Type: "timeline_created",
 		Payload: map[string]interface{}{
@@ -785,6 +792,10 @@ func (s *Server) handleSwitchTimelineMessage(c *Client, msg WSMessage) {
 	if err := db.SetActiveTimelineID(ctx, s.db, c.gameID, timelineID); err != nil {
 		c.send <- mustMarshal(WSMessage{Type: "error", Payload: "timeline not found"})
 		return
+	}
+
+	if s.rdb != nil {
+		_ = s.rdb.Del(ctx, "game:"+c.gameID+":timeline").Err()
 	}
 
 	s.hub.Broadcast(c.gameID, WSMessage{
