@@ -14,7 +14,6 @@ ChessWess is a real-time multiplayer chess application built around a core mecha
 
 ### Lobby & Matchmaking
 - Create games with configurable time controls (including unlimited)
-- Color selection (white/black) when creating a game
 - Browse and join open games from a lobby
 - Game history page with paginated results and win/loss/draw filters
 
