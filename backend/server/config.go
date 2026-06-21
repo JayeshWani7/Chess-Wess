@@ -6,16 +6,18 @@ package server
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 )
 
 // Config holds all validated environment values.
 type Config struct {
-	Port        string
-	DatabaseURL string
-	RedisURL    string
-	JWTSecret   string
+	AppEnv         string
+	Port           string
+	DatabaseURL    string
+	RedisURL       string
+	JWTSecret      string
 	AllowedOrigins []string // comma-separated CORS / WS origins; "*" means any
 }
 
@@ -24,6 +26,14 @@ type Config struct {
 // operators can fix all problems in one restart.
 func LoadConfig() (*Config, error) {
 	var errs []string
+
+	appEnv := os.Getenv("APP_ENV")
+	if appEnv == "" {
+		appEnv = os.Getenv("ENV")
+	}
+	if appEnv == "" {
+		appEnv = "development"
+	}
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -37,6 +47,55 @@ func LoadConfig() (*Config, error) {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
 		errs = append(errs, "DATABASE_URL is not set")
+	}
+
+	// Parse and validate Allowed Origins
+	var allowedOrigins []string
+	rawAllowed := os.Getenv("ALLOWED_ORIGINS")
+	if rawAllowed != "" {
+		parts := strings.Split(rawAllowed, ",")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				allowedOrigins = append(allowedOrigins, part)
+			}
+		}
+	}
+
+	if appEnv == "production" {
+		if len(allowedOrigins) == 0 {
+			errs = append(errs, "ALLOWED_ORIGINS must be explicitly configured in production environment")
+		} else {
+			for _, origin := range allowedOrigins {
+				if origin == "*" {
+					errs = append(errs, "production cannot start with unsafe wildcard origin '*'")
+					continue
+				}
+				if strings.Contains(origin, "*") {
+					errs = append(errs, fmt.Sprintf("production origin '%s' cannot contain wildcard characters", origin))
+					continue
+				}
+				u, err := url.Parse(origin)
+				if err != nil || u.Scheme == "" || u.Host == "" {
+					errs = append(errs, fmt.Sprintf("production origin '%s' must be a valid absolute URL (e.g. https://example.com)", origin))
+				}
+			}
+		}
+	} else {
+		// development or test env
+		if len(allowedOrigins) == 0 {
+			if os.Getenv("DEV_PERMISSIVE_CORS") == "true" {
+				allowedOrigins = []string{"*"}
+			} else {
+				allowedOrigins = []string{
+					"http://localhost:3000",
+					"http://localhost:5173",
+					"http://127.0.0.1:3000",
+					"http://127.0.0.1:5173",
+					"http://localhost:8080",
+				}
+			}
+		}
 	}
 
 	if len(errs) > 0 {
@@ -53,15 +112,8 @@ func LoadConfig() (*Config, error) {
 		redisURL = "redis://localhost:6379"
 	}
 
-	allowedOrigins := []string{"*"}
-	if raw := os.Getenv("ALLOWED_ORIGINS"); raw != "" {
-		allowedOrigins = strings.Split(raw, ",")
-		for i, o := range allowedOrigins {
-			allowedOrigins[i] = strings.TrimSpace(o)
-		}
-	}
-
 	return &Config{
+		AppEnv:         appEnv,
 		Port:           port,
 		DatabaseURL:    databaseURL,
 		RedisURL:       redisURL,
