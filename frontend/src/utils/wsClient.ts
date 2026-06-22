@@ -11,6 +11,7 @@ export type WSMessageType =
   | "game_over"
   | "timer_update"
   | "error"
+  | "timeline_merged"
   | "resync"
   | "pong";
 

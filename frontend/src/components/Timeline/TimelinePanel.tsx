@@ -15,6 +15,8 @@ interface TimelinePanelProps {
   onLoadMoreGraph: () => void;
   onLoadFullGraph: () => void;
   nodeLimit: number | null;
+  merges?: { id: string; game_id: string; source_node_id: string; target_node_id: string }[];
+  sandboxMoves?: TimelineNode[];
 }
 
 function shortId(id: string) {
@@ -88,6 +90,8 @@ export default function TimelinePanel({
   onLoadMoreGraph,
   onLoadFullGraph,
   nodeLimit,
+  merges,
+  sandboxMoves,
 }: TimelinePanelProps) {
   const activeTimeline = useMemo(
     () => timelines.find((t) => t.timeline_id === activeTimelineId) ?? null,
@@ -185,6 +189,8 @@ export default function TimelinePanel({
           activeTimelineId={activeTimelineId}
           selectedNodeId={selectedNodeId}
           onSelectNode={onSelectNode}
+          merges={merges}
+          sandboxMoves={sandboxMoves}
         />
 
         <div className="grid gap-3 md:grid-cols-3">

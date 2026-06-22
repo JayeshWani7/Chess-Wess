@@ -24,6 +24,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		createTimelineMetadataTable,
 		alterTimelinesAddLocking,
 		fixNullActiveTimeline,
+		createNodeMergesTable,
 	}
 
 	for i, m := range migrations {
@@ -286,5 +287,18 @@ SET active_timeline_id = (
   LIMIT 1
 )
 WHERE active_timeline_id IS NULL;
+`
+
+const createNodeMergesTable = `
+CREATE TABLE IF NOT EXISTS node_merges (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  game_id        UUID NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  source_node_id UUID NOT NULL REFERENCES game_nodes(id) ON DELETE CASCADE,
+  target_node_id UUID NOT NULL REFERENCES game_nodes(id) ON DELETE CASCADE,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (game_id, source_node_id, target_node_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_merges_game_id ON node_merges(game_id);
 `
 

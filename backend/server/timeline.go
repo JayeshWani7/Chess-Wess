@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -154,10 +155,17 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	merges, err := db.GetGameMerges(r.Context(), s.db, gameID)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
 	responseObj := map[string]interface{}{
 		"game_id":            gameID,
 		"active_timeline_id": activeTimelineID,
 		"timelines":          result,
+		"merges":             merges,
 	}
 
 	responseBytes, err := json.Marshal(responseObj)
@@ -296,4 +304,69 @@ func (s *Server) handleNodeBranches(w http.ResponseWriter, r *http.Request, node
 		"node_id":  nodeID,
 		"branches": branches,
 	})
+}
+
+func (s *Server) handleMergeTimelines(w http.ResponseWriter, r *http.Request, gameID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	userID := r.Context().Value(userIDKey).(string)
+	game, err := db.GetGame(r.Context(), s.db, gameID)
+	if err != nil {
+		http.Error(w, `{"error":"game not found"}`, http.StatusNotFound)
+		return
+	}
+	if game.WhitePlayerID == nil || game.BlackPlayerID == nil ||
+		(*game.WhitePlayerID != userID && *game.BlackPlayerID != userID) {
+		http.Error(w, `{"error":"not authorized"}`, http.StatusForbidden)
+		return
+	}
+
+	var payload struct {
+		SourceNodeID string `json:"source_node_id"`
+		TargetNodeID string `json:"target_node_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.SourceNodeID == "" || payload.TargetNodeID == "" {
+		http.Error(w, `{"error":"source_node_id and target_node_id required"}`, http.StatusBadRequest)
+		return
+	}
+
+	sourceNode, err := db.GetNode(r.Context(), s.db, payload.SourceNodeID)
+	if err != nil || sourceNode.GameID != gameID {
+		http.Error(w, `{"error":"source node not found in game"}`, http.StatusBadRequest)
+		return
+	}
+	targetNode, err := db.GetNode(r.Context(), s.db, payload.TargetNodeID)
+	if err != nil || targetNode.GameID != gameID {
+		http.Error(w, `{"error":"target node not found in game"}`, http.StatusBadRequest)
+		return
+	}
+
+	if sourceNode.BoardState != targetNode.BoardState {
+		http.Error(w, `{"error":"board states do not match"}`, http.StatusBadRequest)
+		return
+	}
+
+	err = db.CreateMerge(r.Context(), s.db, gameID, payload.SourceNodeID, payload.TargetNodeID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to merge: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// Invalidate timeline cache
+	if s.rdb != nil {
+		_ = s.rdb.Del(r.Context(), "game:"+gameID+":timeline").Err()
+	}
+
+	s.hub.Broadcast(gameID, WSMessage{
+		Type: "timeline_merged",
+		Payload: map[string]string{
+			"source_node_id": payload.SourceNodeID,
+			"target_node_id": payload.TargetNodeID,
+		},
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }

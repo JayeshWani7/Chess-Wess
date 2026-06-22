@@ -269,4 +269,14 @@ export const api = {
 
   getEnergyStatus: (token: string, gameId: string) =>
     request<any>(`/api/games/${gameId}/energy/status`, {}, token),
+
+  mergeTimelines: (token: string, gameId: string, sourceNodeId: string, targetNodeId: string) =>
+    request<{ game_id: string; source_node_id: string; target_node_id: string }>(
+      `/api/games/${gameId}/merge`,
+      {
+        method: "POST",
+        body: JSON.stringify({ source_node_id: sourceNodeId, target_node_id: targetNodeId }),
+      },
+      token
+    ),
 };

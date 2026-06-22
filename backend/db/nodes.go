@@ -564,3 +564,47 @@ func UpdateTimelineName(ctx context.Context, pool *pgxpool.Pool, gameID, timelin
 	}
 	return nil
 }
+
+type NodeMerge struct {
+	ID           string `json:"id"`
+	GameID       string `json:"game_id"`
+	SourceNodeID string `json:"source_node_id"`
+	TargetNodeID string `json:"target_node_id"`
+}
+
+func CreateMerge(ctx context.Context, pool *pgxpool.Pool, gameID, sourceNodeID, targetNodeID string) error {
+	_, err := pool.Exec(ctx,
+		`INSERT INTO node_merges (game_id, source_node_id, target_node_id) 
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (game_id, source_node_id, target_node_id) DO NOTHING`,
+		gameID, sourceNodeID, targetNodeID,
+	)
+	if err != nil {
+		return fmt.Errorf("CreateMerge: %w", err)
+	}
+	return nil
+}
+
+func GetGameMerges(ctx context.Context, pool *pgxpool.Pool, gameID string) ([]NodeMerge, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT id, game_id, source_node_id, target_node_id 
+		 FROM node_merges 
+		 WHERE game_id = $1 
+		 ORDER BY created_at ASC`,
+		gameID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetGameMerges: %w", err)
+	}
+	defer rows.Close()
+
+	var merges []NodeMerge
+	for rows.Next() {
+		var m NodeMerge
+		if err := rows.Scan(&m.ID, &m.GameID, &m.SourceNodeID, &m.TargetNodeID); err != nil {
+			return nil, fmt.Errorf("GetGameMerges scan: %w", err)
+		}
+		merges = append(merges, m)
+	}
+	return merges, nil
+}

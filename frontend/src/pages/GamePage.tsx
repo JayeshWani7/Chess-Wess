@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useGameStore } from "../store/gameStore";
 import { useAuthStore } from "../store/authStore";
@@ -41,6 +41,13 @@ export default function GamePage() {
     setPlayerEnergy,
     setOpponentEnergy,
     playerEnergy,
+    merges,
+    sandboxMode,
+    sandboxMoves,
+    toggleSandboxMode,
+    manifestSandbox,
+    manifestNextQueueItem,
+    addMergeLocal,
   } = useGameStore();
 
   const { rewindTimeline, jumpTimeline } = useEnergy();
@@ -124,7 +131,7 @@ export default function GamePage() {
     try {
       const limit = timelineLimitRef.current ?? undefined;
       const data = await api.getGameTimeline(token, activeGameId, limit);
-      setTimelineData(data.timelines, data.active_timeline_id ?? null);
+      setTimelineData(data.timelines, data.active_timeline_id ?? null, (data as any).merges);
     } catch {
     }
   }, [token, activeGameId, setTimelineData]);
@@ -146,7 +153,7 @@ export default function GamePage() {
         setActiveGame(game.id, game as Parameters<typeof setActiveGame>[1], playerColor || "w");
       }
       if (timelineData) {
-        setTimelineData(timelineData.timelines, timelineData.active_timeline_id ?? null);
+        setTimelineData(timelineData.timelines, timelineData.active_timeline_id ?? null, (timelineData as any).merges);
       }
       if (playerEnergy) {
         setPlayerEnergy(playerEnergy);
@@ -203,6 +210,8 @@ export default function GamePage() {
             const to = p.uci.slice(2, 4);
             const promotion = p.uci[4] as "q" | "r" | "b" | "n" | undefined;
             applyMove({ from, to, promotion } as Parameters<typeof applyMove>[0], p.fen);
+          } else {
+            manifestNextQueueItem(p.id, p.timeline_id);
           }
           break;
         }
@@ -230,6 +239,10 @@ export default function GamePage() {
             });
             setActiveTimelineId(p.timeline_id);
             wsClient.switchTimeline(p.timeline_id);
+
+            if (p.created_by_user === userId) {
+              manifestNextQueueItem(p.root_node_id, p.timeline_id);
+            }
           }
           break;
         }
@@ -244,6 +257,14 @@ export default function GamePage() {
           const p = msg.payload as { timeline_id: string };
           if (p?.timeline_id) {
             setActiveTimelineId(p.timeline_id);
+          }
+          break;
+        }
+        case "timeline_merged": {
+          const p = msg.payload as { source_node_id: string; target_node_id: string };
+          if (p?.source_node_id && p.target_node_id) {
+            addMergeLocal(p.source_node_id, p.target_node_id);
+            refreshTimeline();
           }
           break;
         }
@@ -270,7 +291,7 @@ export default function GamePage() {
       wsClient.disconnect();
       connectedRef.current = false;
     };
-  }, [activeGameId, token, userId, applyMove, setGameOver, addTimelineNode, addTimeline, renameTimelineLocal, setActiveTimelineId]);
+  }, [activeGameId, token, userId, applyMove, setGameOver, addTimelineNode, addTimeline, renameTimelineLocal, setActiveTimelineId, manifestNextQueueItem, addMergeLocal, refreshTimeline]);
 
   useEffect(() => {
     if (!gameInfo || !userId || !token) return;
@@ -405,6 +426,38 @@ export default function GamePage() {
     setTimelineNodeLimit(null);
   }
 
+  const mergeSuggestion = useMemo(() => {
+    if (!token || !activeGameId) return null;
+    const targetNode = selectedTimelineNodeId ? nodesById[selectedTimelineNodeId] : (activeTimelineLatestNodeId ? nodesById[activeTimelineLatestNodeId] : null);
+    if (!targetNode) return null;
+
+    const targetFen = targetNode.board_state;
+    const targetTimelineId = targetNode.timeline_id;
+
+    for (const timeline of timelines) {
+      if (timeline.timeline_id === targetTimelineId || timeline.timeline_id === "sandbox") {
+        continue;
+      }
+      for (const node of timeline.nodes) {
+        if (node.board_state === targetFen) {
+          const exists = merges.some(
+            (m) =>
+              (m.source_node_id === targetNode.id && m.target_node_id === node.id) ||
+              (m.source_node_id === node.id && m.target_node_id === targetNode.id)
+          );
+          if (!exists) {
+            return {
+              sourceNode: targetNode,
+              targetNode: node,
+              targetTimelineName: timeline.timeline_name ?? `Timeline ${timeline.timeline_id.slice(0, 8)}`,
+            };
+          }
+        }
+      }
+    }
+    return null;
+  }, [token, activeGameId, selectedTimelineNodeId, activeTimelineLatestNodeId, nodesById, timelines, merges]);
+
   const whiteName = playerColor === "w" ? (username ?? "You") : opponentName;
   const blackName = playerColor === "b" ? (username ?? "You") : opponentName;
 
@@ -447,6 +500,43 @@ export default function GamePage() {
         </div>
       </header>
 
+      {mergeSuggestion && (
+        <div className="card border-purple-500 bg-purple-50/50 flex flex-col md:flex-row md:items-center justify-between gap-3 p-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-100 text-purple-600">
+              ⚡
+            </span>
+            <div>
+              <h4 className="text-sm font-semibold text-purple-900">Timeline Merge Suggestion</h4>
+              <p className="text-xs text-purple-700">
+                The board state here matches a node in <strong>{mergeSuggestion.targetTimelineName}</strong> (Turn {mergeSuggestion.targetNode.turn_number}). Merge them to converge the timelines!
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              try {
+                await api.mergeTimelines(
+                  token!,
+                  activeGameId!,
+                  mergeSuggestion.sourceNode.id,
+                  mergeSuggestion.targetNode.id
+                );
+              } catch (err) {
+                console.error("Failed to merge timelines:", err);
+                setEnergyToast({
+                  message: "Failed to merge timelines. Ensure FENs match exactly.",
+                  type: "error",
+                });
+              }
+            }}
+            className="btn bg-purple-600 hover:bg-purple-700 text-white text-xs px-4 py-2 rounded-lg font-medium transition-colors"
+          >
+            Merge Timelines
+          </button>
+        </div>
+      )}
+
       <main className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px] items-start">
         <section className="space-y-4">
           <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
@@ -481,6 +571,51 @@ export default function GamePage() {
         <aside className="flex flex-col gap-4 w-full">
           <GameStatus />
           <MoveHistory />
+
+          {/* Sandbox Mode Control Panel */}
+          {status === "active" && (
+            <div className="card space-y-3">
+              <h3 className="text-sm font-semibold text-ink flex items-center justify-between">
+                <span>Branch Sandbox</span>
+                {sandboxMode && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 animate-pulse">
+                    Active
+                  </span>
+                )}
+              </h3>
+              <p className="text-xs text-moss">
+                {sandboxMode
+                  ? "Make temporary moves on the board. They will appear yellow in the graph. Manifest them to commit them permanently."
+                  : "Enable sandbox mode to experiment with moves without committing them."}
+              </p>
+              <div className="flex gap-2">
+                {!sandboxMode ? (
+                  <button
+                    onClick={() => toggleSandboxMode(true)}
+                    className="btn-outline text-xs w-full"
+                  >
+                    Start Sandbox Mode
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={manifestSandbox}
+                      disabled={sandboxMoves.length === 0}
+                      className="btn bg-yellow-500 hover:bg-yellow-600 text-white text-xs flex-1 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Manifest ({sandboxMoves.length})
+                    </button>
+                    <button
+                      onClick={() => toggleSandboxMode(false)}
+                      className="btn-outline text-xs flex-1 py-1.5"
+                    >
+                      Clear
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="card text-xs text-moss space-y-1">
             <p>
@@ -517,6 +652,8 @@ export default function GamePage() {
           onLoadMoreGraph={handleLoadMoreGraph}
           onLoadFullGraph={handleLoadFullGraph}
           nodeLimit={timelineNodeLimit}
+          merges={merges}
+          sandboxMoves={sandboxMoves}
         />
       </section>
     </div>

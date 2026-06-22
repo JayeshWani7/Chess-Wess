@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useRef } from "react";
 import dagre from "dagre";
 import ReactFlow, {
   Background,
@@ -17,6 +17,8 @@ interface TimelineGraphProps {
   activeTimelineId: string | null;
   selectedNodeId: string | null;
   onSelectNode: (nodeId: string) => void;
+  merges?: { source_node_id: string; target_node_id: string }[];
+  sandboxMoves?: TimelineNode[];
 }
 
 const NODE_X_STEP = 160;
@@ -24,6 +26,78 @@ const NODE_Y_STEP = 120;
 const NODE_WIDTH = 132;
 const NODE_HEIGHT = 48;
 const EVAL_CLAMP = 6;
+
+interface MiniBoardProps {
+  fen: string;
+}
+
+function MiniBoard({ fen }: MiniBoardProps) {
+  const boardPart = fen.split(" ")[0] ?? "";
+  const rows = boardPart.split("/");
+  
+  const cells: { key: string; symbol: string; color: "w" | "b"; isLight: boolean }[] = [];
+  
+  const PIECES: Record<string, string> = {
+    k: "♔", q: "♕", r: "♖", b: "♗", n: "n", p: "♙",
+    K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
+  };
+
+  for (let r = 0; r < 8; r++) {
+    const rowStr = rows[r] ?? "";
+    let col = 0;
+    for (let i = 0; i < rowStr.length; i++) {
+      const char = rowStr[i];
+      if (char >= "1" && char <= "8") {
+        const emptyCount = parseInt(char, 10);
+        for (let e = 0; e < emptyCount; e++) {
+          cells.push({
+            key: `cell-${r}-${col}`,
+            symbol: "",
+            color: "w",
+            isLight: (r + col) % 2 === 0
+          });
+          col++;
+        }
+      } else {
+        const isWhite = char === char.toUpperCase();
+        cells.push({
+          key: `cell-${r}-${col}`,
+          symbol: PIECES[char] ?? char,
+          color: isWhite ? "w" : "b",
+          isLight: (r + col) % 2 === 0
+        });
+        col++;
+      }
+    }
+  }
+  
+  return (
+    <div 
+      className="grid grid-cols-8 gap-0 border border-line" 
+      style={{ width: "96px", height: "96px" }}
+    >
+      {cells.map((cell) => (
+        <div
+          key={cell.key}
+          className={`flex items-center justify-center ${cell.isLight ? "bg-[#f2e8d5]" : "bg-[#b2a991]"}`}
+          style={{ width: "12px", height: "12px" }}
+        >
+          {cell.symbol && (
+            <span
+              className="text-[10px] leading-none select-none font-bold"
+              style={{
+                color: cell.color === "w" ? "#fff" : "#1b1e1a",
+                textShadow: cell.color === "w" ? "0 0 1px #000" : "none",
+              }}
+            >
+              {cell.symbol === "n" ? (cell.color === "w" ? "♘" : "♞") : cell.symbol}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 // Shared dagre graph instance — re-used across renders (reset each layout call)
 const dagreGraph = new dagre.graphlib.Graph();
@@ -114,13 +188,53 @@ export default function TimelineGraph({
   activeTimelineId,
   selectedNodeId,
   onSelectNode,
+  merges,
+  sandboxMoves,
 }: TimelineGraphProps) {
   const handleNodeClick: NodeMouseHandler = (_, node) => onSelectNode(node.id);
 
+  const [hoveredNode, setHoveredNode] = useState<{ label: string; fen: string; x: number; y: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleNodeMouseEnter = (event: React.MouseEvent, node: Node) => {
+    const container = containerRef.current;
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    
+    const allTimelineNodes = [
+      ...timelines.flatMap((t) => t.nodes),
+      ...(sandboxMoves ?? []),
+    ];
+    const matching = allTimelineNodes.find((n) => n.id === node.id);
+    
+    if (matching) {
+      setHoveredNode({
+        label: matching.move?.san ?? (matching.turn_number === 0 ? "Root" : `T${matching.turn_number}`),
+        fen: matching.board_state,
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      });
+    }
+  };
+
+  const handleNodeMouseLeave = () => {
+    setHoveredNode(null);
+  };
+
   const { nodes, edges } = useMemo(() => {
+    const timelinesWithSandbox = [...timelines];
+    if (sandboxMoves && sandboxMoves.length > 0) {
+      timelinesWithSandbox.push({
+        timeline_id: "sandbox",
+        timeline_name: "Sandbox",
+        nodes: sandboxMoves,
+        node_count: sandboxMoves.length,
+      });
+    }
+
     // ── Apply render budget before building React Flow nodes ──────────────
     const budgeted = applyRenderBudget({
-      timelines,
+      timelines: timelinesWithSandbox,
       activeTimelineId,
       selectedNodeId,
       maxNodes: MAX_RENDER_NODES,
@@ -145,6 +259,7 @@ export default function TimelineGraph({
       const x = node.turn_number * NODE_X_STEP;
       const y = (timelineIndex.get(node.timeline_id) ?? 0) * NODE_Y_STEP;
       const evalColor = evaluationColor(node.metadata?.evaluation ?? null);
+      const isSandbox = node.timeline_id === "sandbox";
       const isActive = node.timeline_id === activeTimelineId;
       const isSelected = node.id === selectedNodeId;
 
@@ -156,9 +271,11 @@ export default function TimelineGraph({
           evaluation: node.metadata?.evaluation ?? null,
         },
         style: {
-          background: isActive ? "#f2e8d5" : "#fcf8f1",
+          background: isSandbox ? "#fef08a" : (isActive ? "#f2e8d5" : "#fcf8f1"),
           border: isSelected
             ? "2px solid #c9a227"
+            : isSandbox
+            ? "1px dashed #eab308"
             : isActive
             ? "1px solid #4b7a2c"
             : `1px solid ${evalColor}`,
@@ -182,20 +299,38 @@ export default function TimelineGraph({
           source: node.parent_node_id,
           target: node.id,
           type: "smoothstep",
-          style: { stroke: "#b2a991" },
+          style: { stroke: isSandbox ? "#eab308" : "#b2a991", strokeDasharray: isSandbox ? "3 3" : "none" },
         });
       }
     }
 
+    // Add merge edges
+    if (merges) {
+      for (const m of merges) {
+        if (nodeIds.has(m.source_node_id) && nodeIds.has(m.target_node_id)) {
+          rfEdges.push({
+            id: `merge-${m.source_node_id}-${m.target_node_id}`,
+            source: m.source_node_id,
+            target: m.target_node_id,
+            type: "smoothstep",
+            animated: true,
+            label: "Merge",
+            style: { stroke: "#a855f7", strokeWidth: 2, strokeDasharray: "5 5" },
+            labelStyle: { fill: "#a855f7", fontWeight: 700, fontSize: 10 },
+          });
+        }
+      }
+    }
+
     return layoutDag(rfNodes, [...rfEdges, ...buildBranchEdges(allNodes, nodeIds)]);
-  }, [timelines, activeTimelineId, selectedNodeId]);
+  }, [timelines, activeTimelineId, selectedNodeId, sandboxMoves, merges]);
 
   // Node count badge for transparency when budget is applied
   const totalNodes = timelines.reduce((s, t) => s + t.nodes.length, 0);
   const renderingAll = nodes.length >= totalNodes;
 
   return (
-    <div className="relative h-[360px] w-full rounded-xl border border-line bg-panel">
+    <div ref={containerRef} className="relative h-[360px] w-full rounded-xl border border-line bg-panel">
       {/* Render budget indicator */}
       {!renderingAll && (
         <div className="absolute top-2 left-2 z-10 text-xs bg-black/50 text-amber-300 px-2 py-1 rounded pointer-events-none">
@@ -213,6 +348,8 @@ export default function TimelineGraph({
         nodesDraggable={false}
         nodesConnectable={false}
         onNodeClick={handleNodeClick}
+        onNodeMouseEnter={handleNodeMouseEnter}
+        onNodeMouseLeave={handleNodeMouseLeave}
         panOnScroll
         onlyRenderVisibleElements
       >
@@ -233,6 +370,19 @@ export default function TimelineGraph({
         />
         <Controls position="top-right" />
       </ReactFlow>
+
+      {hoveredNode && (
+        <div
+          className="absolute z-50 p-2 rounded-lg border border-line bg-panel shadow-xl pointer-events-none"
+          style={{
+            left: `${hoveredNode.x + 15}px`,
+            top: `${hoveredNode.y - 120}px`,
+          }}
+        >
+          <div className="text-xs font-semibold mb-1 text-center text-ink">{hoveredNode.label}</div>
+          <MiniBoard fen={hoveredNode.fen} />
+        </div>
+      )}
     </div>
   );
 }

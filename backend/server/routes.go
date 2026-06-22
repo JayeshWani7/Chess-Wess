@@ -92,6 +92,8 @@ func (s *Server) handleGameRoutes(w http.ResponseWriter, r *http.Request) {
 		s.joinGame(w, r, gameID)
 	case r.Method == http.MethodPost && action == "resign":
 		s.resignGame(w, r, gameID)
+	case r.Method == http.MethodPost && action == "merge":
+		s.handleMergeTimelines(w, r, gameID)
 	case action == "energy":
 		s.handleEnergyRoutes(w, r)
 	default:

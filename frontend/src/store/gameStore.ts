@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { Chess } from "chess.js";
 import type { Move } from "chess.js";
+import { wsClient } from "../utils/wsClient";
 import {
   LRUTracker,
   applyEviction,
@@ -124,7 +125,7 @@ interface GameState {
   setActiveGame: (gameId: string, info: GameInfo, color: "w" | "b") => void;
   loadMoves: (moves: GameMove[]) => void;
   applyMove: (move: Move, fen: string) => void;
-  setTimelineData: (timelines: TimelineData[], activeTimelineId: string | null) => void;
+  setTimelineData: (timelines: TimelineData[], activeTimelineId: string | null, merges?: { id: string; game_id: string; source_node_id: string; target_node_id: string }[]) => void;
   addTimelineNode: (node: TimelineNode) => void;
   addTimeline: (timelineId: string, timelineName: string | null | undefined, rootNode: TimelineNode) => void;
   renameTimelineLocal: (timelineId: string, name: string) => void;
@@ -144,6 +145,21 @@ interface GameState {
   updateTimelineMetadata: (timelineId: string, metadata: Partial<TimelineMetadata>) => void;
   consumeEnergy: (amount: number) => void;
   refundEnergy: (amount: number) => void;
+
+  // Merge state
+  merges: { id: string; game_id: string; source_node_id: string; target_node_id: string }[];
+  addMergeLocal: (sourceNodeId: string, targetNodeId: string) => void;
+
+  // Sandbox state
+  sandboxMode: boolean;
+  sandboxMoves: TimelineNode[];
+  sandboxParentNodeId: string | null;
+  manifestQueue: { uci: string; san: string; fen: string }[];
+  toggleSandboxMode: (enabled: boolean) => void;
+  addSandboxMove: (move: { from: string; to: string; promotion?: string; uci: string; san: string; fen: string }) => void;
+  clearSandbox: () => void;
+  manifestSandbox: () => void;
+  manifestNextQueueItem: (receivedNodeId: string, receivedTimelineId: string) => void;
 }
 
 // Module-level LRU tracker — one per browser session, reset on leaveGame.
@@ -165,6 +181,17 @@ function buildMovesFromTimeline(nodes: TimelineNode[]): GameMove[] {
     });
   }
   return moves;
+}
+
+function getSandboxPath(nodeId: string, nodesById: Record<string, TimelineNode>): TimelineNode[] {
+  const path: TimelineNode[] = [];
+  let currId: string | null = nodeId;
+  while (currId && nodesById[currId]) {
+    const node = nodesById[currId] as TimelineNode;
+    path.push(node);
+    currId = node.parent_node_id;
+  }
+  return path.reverse();
 }
 
 export const useGameStore = create<GameState>()((set, get) => ({
@@ -190,6 +217,12 @@ export const useGameStore = create<GameState>()((set, get) => ({
   playerEnergy: null,
   opponentEnergy: null,
   timelineMetadata: {},
+
+  merges: [],
+  sandboxMode: false,
+  sandboxMoves: [],
+  sandboxParentNodeId: null,
+  manifestQueue: [],
 
   setActiveGame: (gameId, info, color) => {
     lru.reset();
@@ -217,6 +250,11 @@ export const useGameStore = create<GameState>()((set, get) => ({
       playerEnergy: null,
       opponentEnergy: null,
       timelineMetadata: {},
+      merges: [],
+      sandboxMode: false,
+      sandboxMoves: [],
+      sandboxParentNodeId: null,
+      manifestQueue: [],
     });
   },
 
@@ -250,7 +288,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
     set((s) => ({ chess: newChess, moves: [...s.moves, newMove] }));
   },
 
-  setTimelineData: (timelines, activeTimelineId) => {
+  setTimelineData: (timelines, activeTimelineId, merges) => {
     // Always mark active timeline as hot
     if (activeTimelineId) lru.pin(activeTimelineId);
     const hotSet = lru.hotSet();
@@ -296,6 +334,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       timelineSummaries: buildSummaries(timelines), // summaries always from full data
       moves,
       chess: latestFen ? new Chess(latestFen) : get().chess,
+      merges: merges ?? get().merges,
     });
   },
 
@@ -454,16 +493,18 @@ export const useGameStore = create<GameState>()((set, get) => ({
   },
 
   selectSquare: (square) => {
-    const { chess, selectedSquare, playerColor } = get();
+    const { chess, selectedSquare, playerColor, sandboxMode } = get();
 
     if (!square) {
       set({ selectedSquare: null, legalMoves: [] });
       return;
     }
 
+    const activeColor = sandboxMode ? chess.turn() : playerColor;
+
     if (selectedSquare && selectedSquare !== square) {
       const piece = chess.get(selectedSquare as Parameters<typeof chess.get>[0]);
-      if (piece && piece.color === playerColor) {
+      if (piece && piece.color === activeColor) {
         const moves = chess.moves({ square: selectedSquare as Parameters<typeof chess.moves>[0]["square"], verbose: true });
         const target = moves.find((m) => m.to === square);
         if (target) {
@@ -474,7 +515,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
     }
 
     const piece = chess.get(square as Parameters<typeof chess.get>[0]);
-    if (piece && piece.color === playerColor && chess.turn() === playerColor) {
+    if (piece && piece.color === activeColor && chess.turn() === activeColor) {
       const moves = chess.moves({ square: square as Parameters<typeof chess.moves>[0]["square"], verbose: true });
       set({
         selectedSquare: square,
@@ -515,6 +556,11 @@ export const useGameStore = create<GameState>()((set, get) => ({
       playerEnergy: null,
       opponentEnergy: null,
       timelineMetadata: {},
+      merges: [],
+      sandboxMode: false,
+      sandboxMoves: [],
+      sandboxParentNodeId: null,
+      manifestQueue: [],
     });
   },
 
@@ -565,5 +611,141 @@ export const useGameStore = create<GameState>()((set, get) => ({
         },
       };
     });
+  },
+
+  addMergeLocal: (source, target) => {
+    set((state) => ({
+      merges: [
+        ...state.merges,
+        {
+          id: `local-merge-${Date.now()}`,
+          game_id: state.activeGameId!,
+          source_node_id: source,
+          target_node_id: target,
+        },
+      ],
+    }));
+  },
+
+  toggleSandboxMode: (enabled) => {
+    const { selectedTimelineNodeId, activeTimelineLatestNodeId } = get();
+    if (enabled) {
+      const parentId = selectedTimelineNodeId || activeTimelineLatestNodeId;
+      set({
+        sandboxMode: true,
+        sandboxMoves: [],
+        sandboxParentNodeId: parentId,
+        manifestQueue: [],
+      });
+    } else {
+      get().clearSandbox();
+    }
+  },
+
+  addSandboxMove: (move) => {
+    const { sandboxMoves, sandboxParentNodeId, nodesById, activeGameId } = get();
+    const parentId = sandboxMoves.length === 0 ? sandboxParentNodeId : sandboxMoves[sandboxMoves.length - 1].id;
+    const parentNode = parentId ? nodesById[parentId] : null;
+    const turnNumber = (parentNode ? parentNode.turn_number : 0) + 1;
+    
+    const newSandboxNode: TimelineNode = {
+      id: `sandbox-${crypto.randomUUID()}`,
+      game_id: activeGameId!,
+      timeline_id: "sandbox",
+      parent_node_id: parentId,
+      move: { uci: move.uci, san: move.san, promotion: move.promotion },
+      board_state: move.fen,
+      turn_number: turnNumber,
+      created_by_user: "sandbox-user",
+      created_at: new Date().toISOString(),
+    };
+
+    const newMoves = [...sandboxMoves, newSandboxNode];
+    const newChess = new Chess(move.fen);
+    
+    // Create local GameMove list representing the path
+    const pathNodes = [...(parentNode && parentId ? getSandboxPath(parentId, nodesById) : []), newSandboxNode];
+    const newGameMoves = buildMovesFromTimeline(pathNodes);
+
+    set((s) => ({
+      sandboxMoves: newMoves,
+      chess: newChess,
+      moves: newGameMoves,
+      selectedTimelineNodeId: newSandboxNode.id,
+      nodesById: { ...s.nodesById, [newSandboxNode.id]: newSandboxNode },
+    }));
+  },
+
+  clearSandbox: () => {
+    const { sandboxParentNodeId, nodesById, activeTimelineLatestNodeId } = get();
+    set({
+      sandboxMode: false,
+      sandboxMoves: [],
+      sandboxParentNodeId: null,
+      manifestQueue: [],
+    });
+    
+    // Restore chessboard state to the previous node
+    const targetNodeId = sandboxParentNodeId || activeTimelineLatestNodeId;
+    if (targetNodeId && nodesById[targetNodeId]) {
+      const node = nodesById[targetNodeId];
+      const pathNodes = getSandboxPath(targetNodeId, nodesById);
+      set({
+        chess: new Chess(node.board_state),
+        moves: buildMovesFromTimeline(pathNodes),
+        selectedTimelineNodeId: targetNodeId,
+      });
+    }
+  },
+
+  manifestSandbox: () => {
+    const { sandboxMoves, sandboxParentNodeId } = get();
+    if (sandboxMoves.length === 0) return;
+
+    // Convert sandbox moves to the manifestQueue
+    const queue = sandboxMoves.map((m) => ({
+      uci: m.move!.uci,
+      san: m.move!.san,
+      fen: m.board_state,
+    }));
+
+    // Start manifestation by popping and sending the first move
+    const first = queue[0];
+    const remaining = queue.slice(1);
+
+    set({
+      manifestQueue: remaining,
+      sandboxMode: false,
+      sandboxMoves: [],
+      sandboxParentNodeId: null,
+    });
+
+    // Send first move using the parentNodeId we started from
+    wsClient.sendMove(
+      first.uci,
+      first.san,
+      first.fen,
+      null, // let server resolve or match
+      sandboxParentNodeId
+    );
+  },
+
+  manifestNextQueueItem: (receivedNodeId, receivedTimelineId) => {
+    const { manifestQueue } = get();
+    if (manifestQueue.length === 0) return;
+
+    const first = manifestQueue[0];
+    const remaining = manifestQueue.slice(1);
+
+    set({ manifestQueue: remaining });
+
+    // Send the next move in the chain, referencing the parent we just received
+    wsClient.sendMove(
+      first.uci,
+      first.san,
+      first.fen,
+      receivedTimelineId,
+      receivedNodeId
+    );
   },
 }));

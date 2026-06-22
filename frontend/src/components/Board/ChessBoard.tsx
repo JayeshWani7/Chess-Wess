@@ -37,10 +37,12 @@ export default function ChessBoard() {
     status,
     activeTimelineId,
     activeTimelineLatestNodeId,
+    sandboxMode,
   } =
     useGameStore();
   const selectSquare = useGameStore((s) => s.selectSquare);
   const applyMove = useGameStore((s) => s.applyMove);
+  const addSandboxMove = useGameStore((s) => s.addSandboxMove);
   const userId = useAuthStore((s) => s.userId);
 
   const [pendingPromo, setPendingPromo] = useState<PendingPromotion | null>(null);
@@ -63,6 +65,19 @@ export default function ChessBoard() {
       const fen = chess.fen();
       chess.undo();
 
+      if (sandboxMode) {
+        addSandboxMove({
+          from,
+          to,
+          promotion,
+          uci: move.from + move.to + (move.promotion ?? ""),
+          san: move.san,
+          fen,
+        });
+        selectSquare(null);
+        return;
+      }
+
       applyMove({ from, to, promotion } as Parameters<typeof applyMove>[0], fen);
       wsClient.sendMove(
         move.from + move.to + (move.promotion ?? ""),
@@ -73,7 +88,7 @@ export default function ChessBoard() {
       );
       selectSquare(null);
     },
-    [chess, applyMove, selectSquare, activeTimelineId, activeTimelineLatestNodeId]
+    [chess, applyMove, selectSquare, activeTimelineId, activeTimelineLatestNodeId, sandboxMode, addSandboxMove]
   );
 
   const tryMove = useCallback(
@@ -83,7 +98,7 @@ export default function ChessBoard() {
 
       const isPromotion =
         piece.type === "p" &&
-        ((playerColor === "w" && to[1] === "8") || (playerColor === "b" && to[1] === "1"));
+        ((piece.color === "w" && to[1] === "8") || (piece.color === "b" && to[1] === "1"));
 
       if (isPromotion) {
         setPendingPromo({ from, to });
@@ -92,13 +107,13 @@ export default function ChessBoard() {
 
       commitMove(from, to);
     },
-    [chess, playerColor, commitMove]
+    [chess, commitMove]
   );
 
   const handleSquareClick = useCallback(
     (square: string) => {
       if (status !== "active") return;
-      if (chess.turn() !== playerColor) return;
+      if (!sandboxMode && chess.turn() !== playerColor) return;
       if (pendingPromo) return;
 
       if (selectedSquare && legalMoves.includes(square)) {
@@ -108,21 +123,22 @@ export default function ChessBoard() {
 
       selectSquare(square);
     },
-    [chess, selectedSquare, legalMoves, playerColor, status, pendingPromo, tryMove, selectSquare]
+    [chess, selectedSquare, legalMoves, playerColor, status, pendingPromo, tryMove, selectSquare, sandboxMode]
   );
 
-  const canInteract = status === "active" && chess.turn() === playerColor && !pendingPromo;
+  const canInteract = status === "active" && (sandboxMode || chess.turn() === playerColor) && !pendingPromo;
 
   const handleDragStart = useCallback(
     (square: string, piece: Piece, event: React.DragEvent<HTMLDivElement>) => {
       if (!canInteract) return;
-      if (piece.color !== playerColor) return;
+      const expectedColor = sandboxMode ? chess.turn() : playerColor;
+      if (piece.color !== expectedColor) return;
       event.dataTransfer.setData("text/plain", square);
       event.dataTransfer.effectAllowed = "move";
       setDragFrom(square);
       selectSquare(square);
     },
-    [playerColor, canInteract, selectSquare]
+    [playerColor, canInteract, selectSquare, sandboxMode, chess]
   );
 
   const handleDragEnd = useCallback(() => {
@@ -192,7 +208,7 @@ export default function ChessBoard() {
                 isLegal={isLegal}
                 isLastMove={isLastMove}
                 onClick={handleSquareClick}
-                canDragPiece={Boolean(piece) && canInteract && piece?.color === playerColor}
+                canDragPiece={Boolean(piece) && canInteract && (sandboxMode ? piece?.color === chess.turn() : piece?.color === playerColor)}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 onDrop={handleDrop}

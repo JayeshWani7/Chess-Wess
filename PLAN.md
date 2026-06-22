@@ -164,7 +164,7 @@ CREATE TABLE node_children (
 ## Phase 3: Timeline Branching (Weeks 7-9) ⭐ MVP Magic
 
 ### Goal
-Introduce the core innovation: rewind and create alternate realities.
+Introduce the core innovation: rewind and create alternate realities, enriched with advanced DAG visualization, simulation sandboxes, and timeline merging mechanics.
 
 ### Features
 - [ ] **Rewind Move** — Go back X turns, create branch
@@ -172,28 +172,39 @@ Introduce the core innovation: rewind and create alternate realities.
 - [ ] **Timeline DAG Visualization** — React Flow timeline graph
 - [ ] **Branch Inspection** — Click any branch, see board state
 - [ ] **Active Timeline Switching** — Select which timeline is "active"
+- [ ] **Branch Sandbox Mode** — Locally preview potential branch moves without committing them to the database or notifying the opponent.
+- [ ] **Interactive Node Previews** — Hover over any node in the React Flow graph to render an instant popup miniature chessboard of that position.
+- [ ] **Convergent Timeline Merging** — Detect when two timelines reach identical FEN positions and allow players to merge them back into a single history node, forming a true DAG.
+- [ ] **Quantum Paradox & Stability Indicators** — Highlight nodes and timelines based on threat level (check/checkmate) and branching depth stability scores.
 
-### Rewind Mechanics
+### Rewind & Merge Mechanics
 ```
 Timeline A: Move 1 → Move 2 → Move 3 → Move 4 → Move 5
                                     ↓
                              [REWIND TO MOVE 3]
                                     ↓
-Timeline B: Move 1 → Move 2 → Move 3 → Move 3B → Move 4B
+Timeline B: Move 1 → Move 2 → Move 3 → Move 3B → Move 4B (Reaches position X)
+                                                     ↘
+                                                      [TIMELINE MERGE]
+                                                     ↗
+Timeline A: Move 1 → Move 2 → Move 3 → Move 4  → Move 5  (Reaches position X)
 ```
 
 ### UI Components Needed
 - **Timeline Graph** (React Flow)
   - Nodes represent board states
   - Edges represent moves
-  - Color-coded by status (winning/losing/neutral)
-- **Board State Inspector**
-  - Select any node, see current board
-- **Timeline Heatmap**
-  - Highlight strong vs weak branches
+  - Color-coded by stability and player territory (winning/losing/neutral)
+  - Curved link paths supporting multi-parent convergent merges
+- **Mini-Board Hover Cards**
+  - Interactive popup chessboards rendering FEN states on hover
 - **Branch Control Panel**
   - Rewind button + turn selector
   - Timeline switcher
+  - "Manifest Branch" button to commit sandbox timelines
+  - "Merge Suggestion" banner for convergent states
+- **Tension Heatmap Overlay**
+  - Visual overlay of check status, evaluation score peaks, and timeline split locations
 
 ### Database Updates
 ```sql
@@ -201,29 +212,41 @@ CREATE TABLE timelines (
   id UUID PRIMARY KEY,
   game_id UUID REFERENCES games(id),
   root_node_id UUID REFERENCES game_nodes(id),
+  timeline_name VARCHAR(64),
+  stability_score INT DEFAULT 100,
   created_at TIMESTAMP
 );
 
 -- Link nodes to timelines
 ALTER TABLE game_nodes ADD timeline_id UUID REFERENCES timelines(id);
+
+-- Merge points configuration mapping convergent DAG nodes
+CREATE TABLE node_merges (
+  target_node_id UUID REFERENCES game_nodes(id),
+  source_node_id UUID REFERENCES game_nodes(id),
+  created_at TIMESTAMP,
+  PRIMARY KEY (target_node_id, source_node_id)
+);
 ```
 
 ### Deliverables
 - [ ] Rewind creates new timeline
-- [ ] Timeline graph renders correctly
-- [ ] Both players see same branching
-- [ ] Board stays consistent across switches
+- [ ] Timeline graph renders correctly supporting both branches and merges
+- [ ] Mini-chessboard hover cards show accurate FEN states
+- [ ] Both players see identical branching and merging structures in real time
+- [ ] Board state is verified consistent across switches and merges
+- [ ] Sandbox mode runs entirely client-side until branch manifestation
 
 ### Estimated Effort
-- **Backend**: 8-10 hours (timeline logic, branching queries)
-- **Frontend**: 12-15 hours (React Flow setup, animations)
-- **Visualization**: 6-8 hours (layout algorithms, heatmap)
+- **Backend**: 14-16 hours (branching queries, merge validation, convergence checks)
+- **Frontend**: 18-22 hours (React Flow DAG, mini-chessboard canvas, hover animations, sandbox)
+- **Visualization**: 10-12 hours (hierarchical layouts, merge curves, stability heatmaps)
 
 ### Success Criteria
-- Players can rewind and branch
-- Up to 50 timelines render smoothly
-- No timeline data corruption
-- Winning conditions evaluate per-timeline
+- Players can rewind, branch, and merge timelines
+- Up to 100 timelines and 500+ nodes render smoothly (SVG/Canvas optimization)
+- No timeline or merge data corruption
+- Winning conditions and evaluations trigger per-timeline context
 
 ---
 
