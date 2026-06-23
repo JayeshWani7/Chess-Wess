@@ -18,6 +18,7 @@ export default function PieceIcon({ piece }: PieceIconProps) {
       className="text-4xl leading-none select-none"
       data-piece="true"
       style={{
+        color: piece.color === "w" ? "#fff" : "#1b1e1a",
         WebkitTextStroke: piece.color === "w" ? "0.5px #333" : "1px #000",
         textShadow:
           piece.color === "w"
