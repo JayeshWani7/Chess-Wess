@@ -248,6 +248,7 @@ export default function GameReviewPage({ game, onBack }: Props) {
                         <span
                           className="text-4xl leading-none select-none absolute inset-0 flex items-center justify-center"
                           style={{
+                            color: piece.color === "w" ? "#fff" : "#1b1e1a",
                             textShadow:
                               piece.color === "w"
                                 ? "0 0 2px #000, 0 0 2px #000"
