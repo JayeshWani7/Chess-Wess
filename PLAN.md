@@ -253,35 +253,70 @@ CREATE TABLE node_merges (
 ## Phase 4: Timeline Navigation & Controls (Weeks 10-11)
 
 ### Goal
-Make switching between timelines fluid and intuitive.
+Make switching, comparing, and managing timelines fluid and intuitive with path navigation, keyboard shortcuts, board state diffing, and graph search.
 
 ### Features
-- [ ] **Jump Between Timelines** — Instant switch, continuous gameplay
-- [ ] **Timeline Labels** — Name branches (e.g., "Sacrificial Queen", "Defensive Hold")
-- [ ] **Breadcrumb Navigation** — Show active path from root
-- [ ] **Divergence Highlights** — Visualize where timelines split
-- [ ] **Performance Optimization** — Lazy load large graphs
+- [ ] **Jump Between Timelines & Keyboard Hotkeys** — Rapid timeline jumping using hotkeys (`Ctrl + Arrow keys`, `Alt + Number`), with on-screen visual Hotkey HUD cheat-sheets.
+- [ ] **Multi-Timeline Search & Filter** — Search nodes by chess move (e.g., `Nf3`, `Qxh7`) or FEN structure, and filter branches by active/locked/collapsed/sandbox states.
+- [ ] **Interactive Breadcrumb Path** — Show active path from root to the selected node, complete with clickable divergence indicators (e.g., "Split into 3 branches at this node").
+- [ ] **Side-by-Side Position Diffing** — Select any two nodes and render a dual-board view highlighting board state differences (e.g., highlighting moved, captured, or promoted pieces in red/green/yellow).
+- [ ] **Custom Node Annotations & Strategic Tags** — Allow players to attach custom comments and strategic tags (e.g., "Blunder", "Tactical Sacrifice", "Key Divergence") to nodes in the tree, synced via WebSockets.
+- [ ] **Performance Optimization & Graph Pruning** — Lazy load large graphs (1000+ nodes) and introduce user-configurable auto-pruning rules to hide/collapse inactive branches.
 
-### UI Enhancements
-- Minimap of timeline graph
-- Zoom/pan controls
-- Hotkeys for timeline jumping
-- Timeline sidebar showing stats (material count, evaluation)
+### Divergence Path & Diffing Mechanics
+```
+Path Ancestry: Root → Turn 3 [Divergence: 2 branches] → Turn 5 (Active)
+Select Sibling Timeline: [Timeline A (Turn 6) | Timeline B (Turn 6)]
+
+Comparison Diff (Node X vs Node Y):
+Square e4: White Pawn vs Empty (Pawn moved)
+Square f7: Black Pawn vs Empty (Captured by Bishop on f7)
+```
+
+### UI Components Needed
+- **Navigation HUD & Hotkey Panel**
+  - References and toggles for keyboard shortcuts.
+- **Node Annotation Editor**
+  - Small editable textarea inside the inspector panel for node comments and tags.
+- **Side-by-Side Diff Panel**
+  - Renders two miniature boards highlighting differences between two compared nodes.
+- **Graph Search Bar**
+  - Input at the top of the timeline panel to search and filter nodes.
+- **Ancestry Breadcrumbs**
+  - Clickable path elements showing the path to the selected node.
+
+### Database Updates
+```sql
+-- Persistent node annotations
+CREATE TABLE node_annotations (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  node_id        UUID NOT NULL REFERENCES game_nodes(id) ON DELETE CASCADE,
+  user_id        UUID NOT NULL REFERENCES users(id),
+  annotation     TEXT NOT NULL,
+  label_tag      VARCHAR(32), -- e.g., 'blunder', 'brilliant', 'critical'
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (node_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_annotations_node_id ON node_annotations(node_id);
+```
 
 ### Deliverables
-- [ ] Seamless branch switching
-- [ ] Timeline labels persisted
-- [ ] Graph renders efficiently (1000+ nodes)
-- [ ] UX polished for competitive play
+- [ ] Keyboard navigation is active and responsive.
+- [ ] Clickable breadcrumbs accurately reflect node parentage.
+- [ ] Node search allows filtering graph visually by search queries.
+- [ ] Diff view highlights square discrepancies between any two selected nodes.
+- [ ] Annotations are saved to DB and sync to opponent via WebSockets.
 
 ### Estimated Effort
-- **Backend**: 4-5 hours (optimization queries)
-- **Frontend**: 6-8 hours (UX polish, hotkeys, minimap)
+- **Backend**: 6-8 hours (annotations, search queries, ws sync)
+- **Frontend**: 12-16 hours (dual-board diff UI, hotkey listener, breadcrumbs, annotations HUD)
 
 ### Success Criteria
-- Can switch timelines in <100ms
-- No lag with complex graphs
-- Intuitive navigation for new players
+- Can switch timelines in <50ms.
+- Search and filtering processes 1000+ nodes under 5ms.
+- Visual diff clearly conveys board discrepancies at a glance.
+- Annotations sync in real time across clients.
 
 ---
 
