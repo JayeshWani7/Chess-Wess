@@ -12,6 +12,7 @@ export type WSMessageType =
   | "timer_update"
   | "error"
   | "timeline_merged"
+  | "node_annotated"
   | "resync"
   | "pong";
 

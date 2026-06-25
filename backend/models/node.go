@@ -52,3 +52,13 @@ type GameNodePath struct {
 	Nodes []GameNode `json:"nodes"`
 	Count int        `json:"count"`
 }
+
+type NodeAnnotation struct {
+	ID         string    `json:"id"`
+	NodeID     string    `json:"node_id"`
+	UserID     string    `json:"user_id"`
+	Username   string    `json:"username"`
+	Annotation string    `json:"annotation"`
+	LabelTag   *string   `json:"label_tag"`
+	CreatedAt  time.Time `json:"created_at"`
+}

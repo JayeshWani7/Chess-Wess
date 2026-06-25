@@ -3,14 +3,12 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { Chess } from "chess.js";
 import { api, type GameHistoryEntry, type GameTimelineResponse } from "../utils/api";
 import { useAuthStore } from "../store/authStore";
+import PieceIcon from "../components/Board/PieceIcon";
+
 
 const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"];
 const RANKS = ["8", "7", "6", "5", "4", "3", "2", "1"];
 
-const PIECES: Record<string, string> = {
-  wk: "♔", wq: "♕", wr: "♖", wb: "♗", wn: "♘", wp: "♙",
-  bk: "♚", bq: "♛", br: "♜", bb: "♝", bn: "♞", bp: "♟",
-};
 
 interface Props {
   game?: GameHistoryEntry;
@@ -245,22 +243,9 @@ export default function GameReviewPage({ game, onBack }: Props) {
                       style={{ aspectRatio: "1 / 1", minWidth: 0, minHeight: 0 }}
                     >
                       {piece && (
-                        <span
-                          className="text-4xl leading-none select-none absolute inset-0 flex items-center justify-center"
-                          style={{
-                            color: piece.color === "w" ? "#fff" : "#1b1e1a",
-                            textShadow:
-                              piece.color === "w"
-                                ? "0 0 2px #000, 0 0 2px #000"
-                                : "0 0 2px #fff4, 0 0 1px #0008",
-                            filter:
-                              piece.color === "w"
-                                ? "drop-shadow(0 1px 1px rgba(0,0,0,0.6))"
-                                : "none",
-                          }}
-                        >
-                          {PIECES[`${piece.color}${piece.type}`] ?? "?"}
-                        </span>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <PieceIcon piece={piece} />
+                        </div>
                       )}
                     </div>
                   );

@@ -94,6 +94,8 @@ func (s *Server) handleGameRoutes(w http.ResponseWriter, r *http.Request) {
 		s.resignGame(w, r, gameID)
 	case r.Method == http.MethodPost && action == "merge":
 		s.handleMergeTimelines(w, r, gameID)
+	case action == "annotation":
+		s.handleNodeAnnotation(w, r, gameID)
 	case action == "energy":
 		s.handleEnergyRoutes(w, r)
 	default:

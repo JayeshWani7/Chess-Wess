@@ -95,10 +95,21 @@ export interface TimelineData {
   nodes_partial?: boolean;
 }
 
+export interface NodeAnnotation {
+  id: string;
+  node_id: string;
+  user_id: string;
+  username: string;
+  annotation: string;
+  label_tag: string | null;
+  created_at: string;
+}
+
 export interface GameTimelineResponse {
   game_id: string;
   active_timeline_id: string | null;
   timelines: TimelineData[];
+  annotations?: NodeAnnotation[];
 }
 
 export interface BotInfo {
@@ -276,6 +287,16 @@ export const api = {
       {
         method: "POST",
         body: JSON.stringify({ source_node_id: sourceNodeId, target_node_id: targetNodeId }),
+      },
+      token
+    ),
+
+  annotateNode: (token: string, gameId: string, nodeId: string, annotation: string, labelTag: string) =>
+    request<{ status: string }>(
+      `/api/games/${gameId}/annotation`,
+      {
+        method: "POST",
+        body: JSON.stringify({ node_id: nodeId, annotation, label_tag: labelTag }),
       },
       token
     ),

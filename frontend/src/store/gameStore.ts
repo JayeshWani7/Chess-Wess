@@ -125,7 +125,12 @@ interface GameState {
   setActiveGame: (gameId: string, info: GameInfo, color: "w" | "b") => void;
   loadMoves: (moves: GameMove[]) => void;
   applyMove: (move: Move, fen: string) => void;
-  setTimelineData: (timelines: TimelineData[], activeTimelineId: string | null, merges?: { id: string; game_id: string; source_node_id: string; target_node_id: string }[]) => void;
+  setTimelineData: (
+    timelines: TimelineData[],
+    activeTimelineId: string | null,
+    merges?: { id: string; game_id: string; source_node_id: string; target_node_id: string }[],
+    annotations?: { id: string; node_id: string; user_id: string; username: string; annotation: string; label_tag: string | null; created_at: string }[]
+  ) => void;
   addTimelineNode: (node: TimelineNode) => void;
   addTimeline: (timelineId: string, timelineName: string | null | undefined, rootNode: TimelineNode) => void;
   renameTimelineLocal: (timelineId: string, name: string) => void;
@@ -160,6 +165,12 @@ interface GameState {
   clearSandbox: () => void;
   manifestSandbox: () => void;
   manifestNextQueueItem: (receivedNodeId: string, receivedTimelineId: string) => void;
+
+  // Phase 4 state
+  annotations: Record<string, { user_id: string; username: string; annotation: string; label_tag: string | null }[]>;
+  selectedCompareNodeId: string | null;
+  addAnnotationLocal: (nodeId: string, userId: string, username: string, annotation: string, labelTag: string | null) => void;
+  selectCompareNode: (nodeId: string | null) => void;
 }
 
 // Module-level LRU tracker — one per browser session, reset on leaveGame.
@@ -224,6 +235,9 @@ export const useGameStore = create<GameState>()((set, get) => ({
   sandboxParentNodeId: null,
   manifestQueue: [],
 
+  annotations: {},
+  selectedCompareNodeId: null,
+
   setActiveGame: (gameId, info, color) => {
     lru.reset();
     const chess = new Chess();
@@ -255,6 +269,8 @@ export const useGameStore = create<GameState>()((set, get) => ({
       sandboxMoves: [],
       sandboxParentNodeId: null,
       manifestQueue: [],
+      annotations: {},
+      selectedCompareNodeId: null,
     });
   },
 
@@ -288,7 +304,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
     set((s) => ({ chess: newChess, moves: [...s.moves, newMove] }));
   },
 
-  setTimelineData: (timelines, activeTimelineId, merges) => {
+  setTimelineData: (timelines, activeTimelineId, merges, annotations) => {
     // Always mark active timeline as hot
     if (activeTimelineId) lru.pin(activeTimelineId);
     const hotSet = lru.hotSet();
@@ -325,6 +341,21 @@ export const useGameStore = create<GameState>()((set, get) => ({
       ? nodesByTimeline[resolvedActiveTimelineId][nodesByTimeline[resolvedActiveTimelineId].length - 1].board_state
       : null;
 
+    const annotationsMap: Record<string, { user_id: string; username: string; annotation: string; label_tag: string | null }[]> = {};
+    if (annotations) {
+      for (const a of annotations) {
+        if (!annotationsMap[a.node_id]) {
+          annotationsMap[a.node_id] = [];
+        }
+        annotationsMap[a.node_id].push({
+          user_id: a.user_id,
+          username: a.username,
+          annotation: a.annotation,
+          label_tag: a.label_tag,
+        });
+      }
+    }
+
     set({
       timelines: evicted,
       nodesById,
@@ -335,6 +366,7 @@ export const useGameStore = create<GameState>()((set, get) => ({
       moves,
       chess: latestFen ? new Chess(latestFen) : get().chess,
       merges: merges ?? get().merges,
+      annotations: annotations ? annotationsMap : get().annotations,
     });
   },
 
@@ -561,6 +593,8 @@ export const useGameStore = create<GameState>()((set, get) => ({
       sandboxMoves: [],
       sandboxParentNodeId: null,
       manifestQueue: [],
+      annotations: {},
+      selectedCompareNodeId: null,
     });
   },
 
@@ -747,5 +781,31 @@ export const useGameStore = create<GameState>()((set, get) => ({
       receivedTimelineId,
       receivedNodeId
     );
+  },
+
+  addAnnotationLocal: (nodeId, userId, username, annotation, labelTag) => {
+    set((state) => {
+      const list = state.annotations[nodeId] ?? [];
+      const filtered = list.filter((a) => a.user_id !== userId);
+      const updated = [
+        ...filtered,
+        {
+          user_id: userId,
+          username: username,
+          annotation: annotation,
+          label_tag: labelTag,
+        },
+      ];
+      return {
+        annotations: {
+          ...state.annotations,
+          [nodeId]: updated,
+        },
+      };
+    });
+  },
+
+  selectCompareNode: (nodeId) => {
+    set({ selectedCompareNodeId: nodeId });
   },
 }));

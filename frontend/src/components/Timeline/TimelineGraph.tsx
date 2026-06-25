@@ -19,6 +19,7 @@ interface TimelineGraphProps {
   onSelectNode: (nodeId: string) => void;
   merges?: { source_node_id: string; target_node_id: string }[];
   sandboxMoves?: TimelineNode[];
+  highlightedNodeIds?: Set<string>;
 }
 
 const NODE_X_STEP = 160;
@@ -190,6 +191,7 @@ export default function TimelineGraph({
   onSelectNode,
   merges,
   sandboxMoves,
+  highlightedNodeIds,
 }: TimelineGraphProps) {
   const handleNodeClick: NodeMouseHandler = (_, node) => onSelectNode(node.id);
 
@@ -262,6 +264,7 @@ export default function TimelineGraph({
       const isSandbox = node.timeline_id === "sandbox";
       const isActive = node.timeline_id === activeTimelineId;
       const isSelected = node.id === selectedNodeId;
+      const isHighlighted = highlightedNodeIds?.has(node.id) ?? false;
 
       rfNodes.push({
         id: node.id,
@@ -273,13 +276,19 @@ export default function TimelineGraph({
         style: {
           background: isSandbox ? "#fef08a" : (isActive ? "#f2e8d5" : "#fcf8f1"),
           border: isSelected
-            ? "2px solid #c9a227"
+            ? "3px solid #c9a227"
+            : isHighlighted
+            ? "3px solid #a855f7"
             : isSandbox
             ? "1px dashed #eab308"
             : isActive
             ? "1px solid #4b7a2c"
             : `1px solid ${evalColor}`,
-          boxShadow: isSelected ? `0 0 0 2px ${evalColor}40` : "none",
+          boxShadow: isSelected
+            ? `0 0 0 3px ${evalColor}40`
+            : isHighlighted
+            ? "0 0 8px 2px rgba(168, 85, 247, 0.4)"
+            : "none",
           color: "#1b1e1a",
           padding: "6px 10px",
           borderRadius: 10,

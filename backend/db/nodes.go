@@ -608,3 +608,47 @@ func GetGameMerges(ctx context.Context, pool *pgxpool.Pool, gameID string) ([]No
 	}
 	return merges, nil
 }
+
+func CreateOrUpdateAnnotation(ctx context.Context, pool *pgxpool.Pool, nodeID, userID, annotation, labelTag string) error {
+	var lt *string
+	if labelTag != "" {
+		lt = &labelTag
+	}
+	_, err := pool.Exec(ctx,
+		`INSERT INTO node_annotations (node_id, user_id, annotation, label_tag)
+		 VALUES ($1, $2, $3, $4)
+		 ON CONFLICT (node_id, user_id) DO UPDATE 
+		 SET annotation = EXCLUDED.annotation, label_tag = EXCLUDED.label_tag, created_at = NOW()`,
+		nodeID, userID, annotation, lt,
+	)
+	if err != nil {
+		return fmt.Errorf("CreateOrUpdateAnnotation: %w", err)
+	}
+	return nil
+}
+
+func GetGameAnnotations(ctx context.Context, pool *pgxpool.Pool, gameID string) ([]models.NodeAnnotation, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT na.id, na.node_id, na.user_id, u.username, na.annotation, na.label_tag, na.created_at
+		 FROM node_annotations na
+		 JOIN users u ON u.id = na.user_id
+		 JOIN game_nodes gn ON gn.id = na.node_id
+		 WHERE gn.game_id = $1
+		 ORDER BY na.created_at ASC`,
+		gameID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("GetGameAnnotations: %w", err)
+	}
+	defer rows.Close()
+
+	var annotations []models.NodeAnnotation
+	for rows.Next() {
+		var na models.NodeAnnotation
+		if err := rows.Scan(&na.ID, &na.NodeID, &na.UserID, &na.Username, &na.Annotation, &na.LabelTag, &na.CreatedAt); err != nil {
+			return nil, fmt.Errorf("GetGameAnnotations scan: %w", err)
+		}
+		annotations = append(annotations, na)
+	}
+	return annotations, nil
+}

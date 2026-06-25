@@ -161,11 +161,18 @@ func (s *Server) handleGameTimeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	annotations, err := db.GetGameAnnotations(r.Context(), s.db, gameID)
+	if err != nil {
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+
 	responseObj := map[string]interface{}{
 		"game_id":            gameID,
 		"active_timeline_id": activeTimelineID,
 		"timelines":          result,
 		"merges":             merges,
+		"annotations":        annotations,
 	}
 
 	responseBytes, err := json.Marshal(responseObj)
@@ -364,6 +371,70 @@ func (s *Server) handleMergeTimelines(w http.ResponseWriter, r *http.Request, ga
 		Payload: map[string]string{
 			"source_node_id": payload.SourceNodeID,
 			"target_node_id": payload.TargetNodeID,
+		},
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+func (s *Server) handleNodeAnnotation(w http.ResponseWriter, r *http.Request, gameID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	userID := r.Context().Value(userIDKey).(string)
+	game, err := db.GetGame(r.Context(), s.db, gameID)
+	if err != nil {
+		http.Error(w, `{"error":"game not found"}`, http.StatusNotFound)
+		return
+	}
+	if game.WhitePlayerID == nil || game.BlackPlayerID == nil ||
+		(*game.WhitePlayerID != userID && *game.BlackPlayerID != userID) {
+		http.Error(w, `{"error":"not authorized"}`, http.StatusForbidden)
+		return
+	}
+
+	var payload struct {
+		NodeID     string `json:"node_id"`
+		Annotation string `json:"annotation"`
+		LabelTag   string `json:"label_tag"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.NodeID == "" || payload.Annotation == "" {
+		http.Error(w, `{"error":"node_id and annotation required"}`, http.StatusBadRequest)
+		return
+	}
+
+	node, err := db.GetNode(r.Context(), s.db, payload.NodeID)
+	if err != nil || node.GameID != gameID {
+		http.Error(w, `{"error":"node not found in game"}`, http.StatusNotFound)
+		return
+	}
+
+	err = db.CreateOrUpdateAnnotation(r.Context(), s.db, payload.NodeID, userID, payload.Annotation, payload.LabelTag)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"failed to create annotation: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	if s.rdb != nil {
+		_ = s.rdb.Del(r.Context(), "game:"+gameID+":timeline").Err()
+	}
+
+	var username string
+	_ = s.db.QueryRow(r.Context(), "SELECT username FROM users WHERE id = $1", userID).Scan(&username)
+	if username == "" {
+		username = "Player"
+	}
+
+	s.hub.Broadcast(gameID, WSMessage{
+		Type: "node_annotated",
+		Payload: map[string]interface{}{
+			"node_id":    payload.NodeID,
+			"user_id":    userID,
+			"username":   username,
+			"annotation": payload.Annotation,
+			"label_tag":  payload.LabelTag,
 		},
 	})
 

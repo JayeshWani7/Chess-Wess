@@ -25,6 +25,7 @@ func RunMigrations(ctx context.Context, pool *pgxpool.Pool) error {
 		alterTimelinesAddLocking,
 		fixNullActiveTimeline,
 		createNodeMergesTable,
+		createNodeAnnotationsTable,
 	}
 
 	for i, m := range migrations {
@@ -300,5 +301,19 @@ CREATE TABLE IF NOT EXISTS node_merges (
 );
 
 CREATE INDEX IF NOT EXISTS idx_node_merges_game_id ON node_merges(game_id);
+`
+
+const createNodeAnnotationsTable = `
+CREATE TABLE IF NOT EXISTS node_annotations (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  node_id        UUID NOT NULL REFERENCES game_nodes(id) ON DELETE CASCADE,
+  user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  annotation     TEXT NOT NULL,
+  label_tag      VARCHAR(32),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (node_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_node_annotations_node_id ON node_annotations(node_id);
 `
 

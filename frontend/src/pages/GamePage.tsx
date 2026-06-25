@@ -14,6 +14,8 @@ import GameOverModal from "../components/Game/GameOverModal";
 import RulesModal from "../components/Game/RulesModal";
 import TimelinePanel from "../components/Timeline/TimelinePanel";
 import { EnergyPanel, EnergyNotification, OpponentEnergyPanel } from "../components/Energy/EnergyPanel";
+import BoardDiffPanel from "../components/Game/BoardDiffPanel";
+
 
 export default function GamePage() {
   const {
@@ -48,6 +50,9 @@ export default function GamePage() {
     manifestSandbox,
     manifestNextQueueItem,
     addMergeLocal,
+    selectedCompareNodeId,
+    selectCompareNode,
+    addAnnotationLocal,
   } = useGameStore();
 
   const { rewindTimeline, jumpTimeline } = useEnergy();
@@ -276,6 +281,20 @@ export default function GamePage() {
           );
           break;
         }
+        case "node_annotated": {
+          const p = msg.payload as {
+            node_id: string;
+            user_id: string;
+            username: string;
+            annotation: string;
+            label_tag: string | null;
+          };
+          if (p?.node_id) {
+            addAnnotationLocal(p.node_id, p.user_id, p.username, p.annotation, p.label_tag);
+            refreshTimeline();
+          }
+          break;
+        }
         case "resync": {
           console.log("[WS] server requested full state resync");
           syncFullStateRef.current();
@@ -291,7 +310,7 @@ export default function GamePage() {
       wsClient.disconnect();
       connectedRef.current = false;
     };
-  }, [activeGameId, token, userId, applyMove, setGameOver, addTimelineNode, addTimeline, renameTimelineLocal, setActiveTimelineId, manifestNextQueueItem, addMergeLocal, refreshTimeline]);
+  }, [activeGameId, token, userId, applyMove, setGameOver, addTimelineNode, addTimeline, renameTimelineLocal, setActiveTimelineId, manifestNextQueueItem, addMergeLocal, refreshTimeline, addAnnotationLocal]);
 
   useEffect(() => {
     if (!gameInfo || !userId || !token) return;
@@ -425,6 +444,100 @@ export default function GamePage() {
   function handleLoadFullGraph() {
     setTimelineNodeLimit(null);
   }
+
+  // Keyboard Hotkeys & Shortcut HUD
+  const [showHud, setShowHud] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      if (e.key === "?" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        setShowHud((prev) => !prev);
+        return;
+      }
+
+      if (e.ctrlKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        const currentNodeId = selectedTimelineNodeId || activeTimelineLatestNodeId;
+        if (!currentNodeId) return;
+
+        const currentNode = nodesById[currentNodeId];
+        if (!currentNode) return;
+
+        const timelineId = currentNode.timeline_id;
+        const list = timelines.find((t) => t.timeline_id === timelineId)?.nodes || [];
+        const idx = list.findIndex((n) => n.id === currentNodeId);
+
+        if (e.key === "ArrowLeft") {
+          if (idx > 0) {
+            selectTimelineNode(list[idx - 1].id);
+          } else if (currentNode.parent_node_id) {
+            selectTimelineNode(currentNode.parent_node_id);
+          }
+        } else {
+          if (idx >= 0 && idx < list.length - 1) {
+            selectTimelineNode(list[idx + 1].id);
+          }
+        }
+        return;
+      }
+
+      if (e.ctrlKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault();
+        if (timelines.length <= 1 || !activeTimelineId) return;
+
+        const idx = timelines.findIndex((t) => t.timeline_id === activeTimelineId);
+        if (idx === -1) return;
+
+        let nextIdx = e.key === "ArrowUp" ? idx - 1 : idx + 1;
+        if (nextIdx < 0) nextIdx = timelines.length - 1;
+        if (nextIdx >= timelines.length) nextIdx = 0;
+
+        handleSwitchTimeline(timelines[nextIdx].timeline_id);
+        return;
+      }
+
+      if (e.altKey && e.key >= "1" && e.key <= "9") {
+        e.preventDefault();
+        const num = parseInt(e.key, 10);
+        const targetIdx = num - 1;
+        if (targetIdx < timelines.length) {
+          handleSwitchTimeline(timelines[targetIdx].timeline_id);
+        }
+        return;
+      }
+
+      if (e.ctrlKey && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        selectCompareNode(null);
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    activeTimelineId,
+    activeTimelineLatestNodeId,
+    selectedTimelineNodeId,
+    nodesById,
+    timelines,
+    selectTimelineNode,
+    handleSwitchTimeline,
+    selectCompareNode,
+  ]);
 
   const mergeSuggestion = useMemo(() => {
     if (!token || !activeGameId) return null;
@@ -566,6 +679,22 @@ export default function GamePage() {
           <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
             <EnergyPanel />
           </div>
+
+          {selectedCompareNodeId && (
+            <div className="w-full" style={{ width: "min(92vw, 620px)" }}>
+              <BoardDiffPanel
+                fenA={nodesById[selectedCompareNodeId]?.board_state ?? ""}
+                fenB={nodesById[selectedTimelineNodeId || activeTimelineLatestNodeId || ""]?.board_state ?? ""}
+                labelA={`Compare Node (Turn ${nodesById[selectedCompareNodeId]?.turn_number ?? 0})`}
+                labelB={
+                  selectedTimelineNodeId
+                    ? `Selected Node (Turn ${nodesById[selectedTimelineNodeId]?.turn_number ?? 0})`
+                    : `Active Node (Turn ${nodesById[activeTimelineLatestNodeId ?? ""]?.turn_number ?? 0})`
+                }
+                onClose={() => selectCompareNode(null)}
+              />
+            </div>
+          )}
         </section>
 
         <aside className="flex flex-col gap-4 w-full">
@@ -656,6 +785,91 @@ export default function GamePage() {
           sandboxMoves={sandboxMoves}
         />
       </section>
+
+      {/* Floating Hotkeys Help Button */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          onClick={() => setShowHud(true)}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-600 text-white shadow-lg hover:bg-purple-700 hover:scale-105 transition-all font-bold text-lg"
+          title="Keyboard Shortcuts (?)"
+        >
+          ?
+        </button>
+      </div>
+
+      {/* Shortcuts HUD Modal */}
+      {showHud && (
+        <div className="fixed inset-0 bg-ink/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="card max-w-md w-full border border-purple-500 bg-white/95 shadow-2xl p-6 relative">
+            <button
+              onClick={() => setShowHud(false)}
+              className="absolute top-4 right-4 text-moss hover:text-ink text-lg"
+            >
+              ✕
+            </button>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-100 text-purple-600 text-sm">
+                ⌨
+              </span>
+              <h3 className="text-lg font-bold text-ink">Keyboard Shortcuts</h3>
+            </div>
+            
+            <div className="space-y-3.5 text-sm text-ink">
+              <div className="flex items-center justify-between border-b border-line pb-2">
+                <span>Step Turn Backward / Forward</span>
+                <span className="flex gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">Ctrl</kbd>
+                  <span>+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">←</kbd>
+                  <span>/</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">→</kbd>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between border-b border-line pb-2">
+                <span>Switch Timeline Branch</span>
+                <span className="flex gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">Ctrl</kbd>
+                  <span>+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">↑</kbd>
+                  <span>/</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">↓</kbd>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between border-b border-line pb-2">
+                <span>Jump to Timeline (1-9)</span>
+                <span className="flex gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">Alt</kbd>
+                  <span>+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">1-9</kbd>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between border-b border-line pb-2">
+                <span>Close Comparison Diff View</span>
+                <span className="flex gap-1">
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">Ctrl</kbd>
+                  <span>+</span>
+                  <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">D</kbd>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span>Toggle Shortcut Guide</span>
+                <kbd className="px-1.5 py-0.5 rounded border border-line bg-paper text-xs shadow-sm font-mono font-bold">?</kbd>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setShowHud(false)}
+              className="btn bg-purple-600 hover:bg-purple-700 text-white w-full text-xs py-2 rounded-lg font-medium transition-colors mt-6"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
