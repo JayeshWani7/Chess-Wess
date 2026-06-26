@@ -39,7 +39,7 @@ function MiniBoard({ fen }: MiniBoardProps) {
   const cells: { key: string; symbol: string; color: "w" | "b"; isLight: boolean }[] = [];
   
   const PIECES: Record<string, string> = {
-    k: "♔", q: "♕", r: "♖", b: "♗", n: "n", p: "♙",
+    k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟",
     K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
   };
 
@@ -91,7 +91,7 @@ function MiniBoard({ fen }: MiniBoardProps) {
                 textShadow: cell.color === "w" ? "0 0 1px #000" : "none",
               }}
             >
-              {cell.symbol === "n" ? (cell.color === "w" ? "♘" : "♞") : cell.symbol}
+              {cell.symbol}
             </span>
           )}
         </div>
