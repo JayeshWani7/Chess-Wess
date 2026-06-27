@@ -287,7 +287,7 @@ export default function TimelinePanel({
                   </button>
                   {hasDivergence && (
                     <span 
-                      className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-semibold bg-purple-100 text-purple-700 cursor-pointer"
+                      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-purple-100 text-purple-700 cursor-pointer"
                       title={`${parentBranches.length} branch pathways fork from here`}
                       onClick={() => onSelectNode(node.id)}
                     >
@@ -381,7 +381,7 @@ export default function TimelinePanel({
                           <div className="flex items-center justify-between mb-0.5 font-sans">
                             <span className="font-semibold text-ink">{ann.username}</span>
                             {ann.label_tag && (
-                              <span className="px-1 py-0.2 rounded text-[9px] font-bold bg-purple-100 text-purple-700 capitalize">
+                              <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 capitalize">
                                 {ann.label_tag}
                               </span>
                             )}
