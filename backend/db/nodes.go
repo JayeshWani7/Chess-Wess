@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ChessWess/backend/models"
@@ -610,6 +611,11 @@ func GetGameMerges(ctx context.Context, pool *pgxpool.Pool, gameID string) ([]No
 }
 
 func CreateOrUpdateAnnotation(ctx context.Context, pool *pgxpool.Pool, nodeID, userID, annotation, labelTag string) error {
+	annotation = strings.TrimSpace(annotation)
+	if annotation == "" {
+		return fmt.Errorf("annotation cannot be empty")
+	}
+	labelTag = strings.TrimSpace(labelTag)
 	var lt *string
 	if labelTag != "" {
 		lt = &labelTag
