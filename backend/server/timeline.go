@@ -400,7 +400,15 @@ func (s *Server) handleNodeAnnotation(w http.ResponseWriter, r *http.Request, ga
 		Annotation string `json:"annotation"`
 		LabelTag   string `json:"label_tag"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.NodeID == "" || payload.Annotation == "" {
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		return
+	}
+	payload.NodeID = strings.TrimSpace(payload.NodeID)
+	payload.Annotation = strings.TrimSpace(payload.Annotation)
+	payload.LabelTag = strings.TrimSpace(payload.LabelTag)
+
+	if payload.NodeID == "" || payload.Annotation == "" {
 		http.Error(w, `{"error":"node_id and annotation required"}`, http.StatusBadRequest)
 		return
 	}
